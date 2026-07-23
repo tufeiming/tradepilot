@@ -18,11 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor = subparsers.add_parser("doctor", help="检查配置、行情、历史和飞书")
-    doctor.add_argument("--config", type=Path, required=True)
+    doctor.add_argument("--config", type=Path, default=Path("config.toml"))
     doctor.add_argument("--send-test", action="store_true")
 
     monitor = subparsers.add_parser("monitor", help="启动无界面实时盯盘")
-    monitor.add_argument("--config", type=Path, required=True)
+    monitor.add_argument("--config", type=Path, default=Path("config.toml"))
     return parser
 
 

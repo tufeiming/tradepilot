@@ -35,7 +35,7 @@ webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/..."
 ## 自检
 
 ```powershell
-uv run tradepilot doctor --config config.toml --send-test
+uv run tradepilot doctor --send-test
 ```
 
 自检会确认依赖版本、每个标的的实时快照、至少 100 根已完成分钟线以及飞书 webhook。
@@ -43,7 +43,7 @@ uv run tradepilot doctor --config config.toml --send-test
 ## 实时监控
 
 ```powershell
-uv run tradepilot monitor --config config.toml
+uv run tradepilot monitor
 ```
 
 按 `Ctrl+C` 正常退出。程序会在配置文件旁创建 `.vntrader`，保存 CTA 配置、日志、信号去重状态

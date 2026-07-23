@@ -9,8 +9,8 @@ uv sync --python 3.13 --all-groups
 Copy-Item config.example.toml config.toml
 $env:TRADEPILOT_FEISHU_WEBHOOK_URL = "https://open.feishu.cn/open-apis/bot/v2/hook/..."
 $env:TRADEPILOT_FEISHU_SECRET = "可选签名密钥"
-uv run tradepilot doctor --config config.toml --send-test
-uv run tradepilot monitor --config config.toml
+uv run tradepilot doctor --send-test
+uv run tradepilot monitor
 ```
 
 需要随登录启动时，可在 Windows 任务计划程序创建任务：
