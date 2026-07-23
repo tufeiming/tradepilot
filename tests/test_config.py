@@ -65,12 +65,24 @@ def test_history_warmup_cannot_be_configured_below_100(tmp_path):
 
 def test_requires_webhook_when_feishu_enabled(tmp_path):
     body = BASE.replace("enabled = false", "enabled = true")
-    with pytest.raises(ConfigError, match="TRADEPILOT_FEISHU_WEBHOOK_URL"):
+    with pytest.raises(ConfigError, match="webhook_url"):
         load_config(write_config(tmp_path / "config.toml", body), environ={})
 
 
-def test_reads_feishu_secrets_only_from_environment(tmp_path):
-    body = BASE.replace("enabled = false", "enabled = true")
+def test_reads_feishu_webhook_from_toml(tmp_path):
+    body = BASE.replace(
+        "enabled = false",
+        'enabled = true\nwebhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/local"',
+    )
+    config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+    assert config.feishu.webhook_url.endswith("/local")
+
+
+def test_environment_overrides_toml_webhook_and_provides_secret(tmp_path):
+    body = BASE.replace(
+        "enabled = false",
+        'enabled = true\nwebhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/local"',
+    )
     config = load_config(
         write_config(tmp_path / "config.toml", body),
         environ={
@@ -80,3 +92,9 @@ def test_reads_feishu_secrets_only_from_environment(tmp_path):
     )
     assert config.feishu.webhook_url.endswith("/id")
     assert config.feishu.secret == "secret"
+
+
+def test_rejects_non_string_toml_webhook(tmp_path):
+    body = BASE.replace("enabled = false", "enabled = true\nwebhook_url = 123")
+    with pytest.raises(ConfigError, match="must be a string"):
+        load_config(write_config(tmp_path / "config.toml", body), environ={})

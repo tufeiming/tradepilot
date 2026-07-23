@@ -21,8 +21,16 @@ $env:TRADEPILOT_FEISHU_WEBHOOK_URL = "https://open.feishu.cn/open-apis/bot/v2/ho
 $env:TRADEPILOT_FEISHU_SECRET = "可选的签名密钥"
 ```
 
-不使用飞书时，可在本地 `config.toml` 中设置 `feishu.enabled = false`。真实配置、密钥、日志和
-VeighNa 运行状态均不会进入 Git。
+也可以把 webhook 直接写入已被 Git 忽略的本地 `config.toml`：
+
+```toml
+[feishu]
+enabled = true
+webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/..."
+```
+
+环境变量中的 webhook 优先于 TOML。不使用飞书时，可设置 `feishu.enabled = false`。签名密钥、
+真实配置、日志和 VeighNa 运行状态均不会进入 Git。
 
 ## 自检
 

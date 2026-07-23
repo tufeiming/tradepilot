@@ -10,7 +10,9 @@ slow_window = 20
 
 [feishu]
 enabled = true
+# webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/..."
 
-# Secrets are environment variables and must never be placed in this file:
+# The environment variable overrides webhook_url when both are set:
 # TRADEPILOT_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/...
+# Keep the optional signing secret in an environment variable:
 # TRADEPILOT_FEISHU_SECRET=optional-signature-secret

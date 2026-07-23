@@ -126,10 +126,17 @@ def load_config(
     enabled = feishu_raw.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ConfigError("feishu.enabled must be true or false")
-    webhook_url = env.get("TRADEPILOT_FEISHU_WEBHOOK_URL") or None
+    configured_webhook = feishu_raw.get("webhook_url")
+    if configured_webhook is not None and not isinstance(configured_webhook, str):
+        raise ConfigError("feishu.webhook_url must be a string")
+    webhook_url = (env.get("TRADEPILOT_FEISHU_WEBHOOK_URL") or configured_webhook or "").strip()
+    webhook_url = webhook_url or None
     secret = env.get("TRADEPILOT_FEISHU_SECRET") or None
     if enabled and not webhook_url:
-        raise ConfigError("TRADEPILOT_FEISHU_WEBHOOK_URL is required when feishu.enabled is true")
+        raise ConfigError(
+            "feishu.webhook_url or TRADEPILOT_FEISHU_WEBHOOK_URL is required "
+            "when feishu.enabled is true"
+        )
     if webhook_url and not webhook_url.startswith("https://open.feishu.cn/"):
         raise ConfigError("TRADEPILOT_FEISHU_WEBHOOK_URL must use open.feishu.cn HTTPS")
 
