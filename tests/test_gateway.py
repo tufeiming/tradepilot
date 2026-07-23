@@ -5,12 +5,12 @@ from vnpy.event import EventEngine
 from vnpy.trader.constant import Direction, Exchange, Interval, OrderType
 from vnpy.trader.object import HistoryRequest, OrderRequest
 
-from tradepilot.gateway import (
+from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, MinuteSnapshot
+from tradepilot.data_sources.tencent.gateway import (
     TencentGateway,
     TradingDisabledError,
     _normalize_symbols,
 )
-from tradepilot.tencent import SHANGHAI_TZ, MinuteSnapshot
 
 
 def test_normalize_multiple_symbols():

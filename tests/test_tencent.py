@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from tradepilot.tencent import (
+from tradepilot.data_sources.tencent.client import (
     SHANGHAI_TZ,
     TencentDataError,
     from_tencent_symbol,

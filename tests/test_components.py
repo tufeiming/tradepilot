@@ -4,24 +4,24 @@ from pathlib import Path
 
 import pytest
 
-import tradepilot.builtin_components as builtin_components
-from tradepilot.builtin_components import build_default_catalog
-from tradepilot.components import (
+import tradepilot.bootstrap as bootstrap
+from tradepilot.bootstrap import build_default_catalog
+from tradepilot.core.components import (
     ComponentCatalog,
     DataSourcePlugin,
     ExtensionRegistry,
     StrategyPlugin,
     SymbolDiagnostic,
 )
-from tradepilot.config import (
+from tradepilot.core.config import (
     AppConfig,
     ComponentConfig,
     ConfigError,
     FeishuConfig,
     MonitorConfig,
 )
-from tradepilot.gateway import TencentGateway
-from tradepilot.strategy import DoubleMaSignalStrategy
+from tradepilot.data_sources.tencent.gateway import TencentGateway
+from tradepilot.strategies.double_ma.strategy import DoubleMaSignalStrategy
 
 
 def make_config(
@@ -185,13 +185,13 @@ class FakeEntryPoint:
 
 def test_installed_entry_points_are_discovered(monkeypatch):
     def fake_entry_points(*, group):
-        if group == builtin_components.DATA_SOURCE_ENTRY_POINT:
+        if group == bootstrap.DATA_SOURCE_ENTRY_POINT:
             return [FakeEntryPoint("dummy", DummyDataSource)]
-        if group == builtin_components.STRATEGY_ENTRY_POINT:
+        if group == bootstrap.STRATEGY_ENTRY_POINT:
             return [FakeEntryPoint("dummy", DummyStrategy)]
         return []
 
-    monkeypatch.setattr(builtin_components, "entry_points", fake_entry_points)
+    monkeypatch.setattr(bootstrap, "entry_points", fake_entry_points)
     catalog = build_default_catalog()
 
     assert catalog.data_sources.names() == ("dummy", "tencent")

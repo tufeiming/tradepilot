@@ -9,7 +9,7 @@ from datetime import datetime
 from vnpy.trader.gateway import BaseGateway
 from vnpy_ctastrategy import CtaTemplate
 
-from tradepilot.config import AppConfig, ConfigError
+from tradepilot.core.config import AppConfig, ConfigError
 
 MANAGED_STRATEGY_PREFIX = "tradepilot_"
 

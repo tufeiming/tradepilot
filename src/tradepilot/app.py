@@ -13,11 +13,11 @@ from vnpy.event import Event, EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy_ctastrategy import CtaEngine, CtaStrategyApp
 
-from tradepilot.builtin_components import build_default_catalog
-from tradepilot.components import ComponentCatalog
-from tradepilot.config import AppConfig
-from tradepilot.events import EVENT_TRADEPILOT_FEED, FeedStatus, FeedStatusEvent
-from tradepilot.notifier import FeishuClient, NotificationService, NotificationStore
+from tradepilot.bootstrap import build_default_catalog
+from tradepilot.core.components import ComponentCatalog
+from tradepilot.core.config import AppConfig
+from tradepilot.core.events import EVENT_TRADEPILOT_FEED, FeedStatus, FeedStatusEvent
+from tradepilot.notifications.feishu import FeishuClient, NotificationService, NotificationStore
 
 LOGGER = logging.getLogger(__name__)
 MARKET_TZ = ZoneInfo("Asia/Shanghai")

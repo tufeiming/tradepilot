@@ -6,10 +6,10 @@ from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from zoneinfo import ZoneInfo
 
-from tradepilot.builtin_components import build_default_catalog
-from tradepilot.components import ComponentCatalog
-from tradepilot.config import AppConfig
-from tradepilot.notifier import FeishuClient
+from tradepilot.bootstrap import build_default_catalog
+from tradepilot.core.components import ComponentCatalog
+from tradepilot.core.config import AppConfig
+from tradepilot.notifications.feishu import FeishuClient
 
 EXPECTED_VERSIONS = {
     "vnpy": "4.4.0",

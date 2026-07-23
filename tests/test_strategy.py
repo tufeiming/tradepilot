@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData
 
-from tradepilot.events import EVENT_TRADEPILOT_SIGNAL, SignalDirection
-from tradepilot.strategy import DoubleMaSignalStrategy
-from tradepilot.tencent import SHANGHAI_TZ
+from tradepilot.core.events import EVENT_TRADEPILOT_SIGNAL, SignalDirection
+from tradepilot.data_sources.tencent.client import SHANGHAI_TZ
+from tradepilot.strategies.double_ma.strategy import DoubleMaSignalStrategy
 
 
 class CaptureEventEngine:

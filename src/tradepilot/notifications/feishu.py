@@ -18,7 +18,7 @@ from typing import Any, Protocol
 import requests
 from vnpy.event import Event, EventEngine
 
-from tradepilot.events import (
+from tradepilot.core.events import (
     EVENT_TRADEPILOT_FEED,
     EVENT_TRADEPILOT_SIGNAL,
     FeedStatusEvent,

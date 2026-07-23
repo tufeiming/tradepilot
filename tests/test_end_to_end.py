@@ -5,9 +5,9 @@ from vnpy.event import EventEngine
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData
 
-from tradepilot.notifier import FeishuClient, NotificationService, NotificationStore
-from tradepilot.strategy import DoubleMaSignalStrategy
-from tradepilot.tencent import SHANGHAI_TZ, parse_quote_response
+from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, parse_quote_response
+from tradepilot.notifications.feishu import FeishuClient, NotificationService, NotificationStore
+from tradepilot.strategies.double_ma.strategy import DoubleMaSignalStrategy
 
 
 class FakeResponse:

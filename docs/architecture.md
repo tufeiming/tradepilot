@@ -3,6 +3,34 @@
 TradePilot 使用组件注册和依赖注入隔离数据源、策略与应用生命周期。核心应用负责协调，不负责判断
 某个数据源如何连接，也不负责解释某套策略的专用参数。
 
+## 目录结构
+
+```text
+src/tradepilot/
+├── app.py                         # 无界面应用生命周期
+├── bootstrap.py                   # 内置组件装配和 entry point 发现
+├── cli.py                         # 命令行入口
+├── doctor.py                      # 只读诊断用例
+├── core/
+│   ├── components.py              # 插件抽象、注册表和组件目录
+│   ├── config.py                  # 核心 TOML 配置
+│   └── events.py                  # 稳定事件契约
+├── data_sources/
+│   └── tencent/
+│       ├── client.py              # HTTP 客户端和纯解析器
+│       ├── gateway.py             # 只读 VeighNa Gateway
+│       └── plugin.py              # DataSourcePlugin 适配
+├── strategies/
+│   └── double_ma/
+│       ├── strategy.py            # CTA 策略实现
+│       └── plugin.py              # StrategyPlugin 适配
+└── notifications/
+    └── feishu.py                   # 飞书客户端、发件箱和通知服务
+```
+
+包根目录只保留应用入口和装配代码。领域实现必须放在对应子包；一个新数据源或新策略拥有自己的目录，
+实现细节不会进入 `core`。
+
 ```mermaid
 flowchart LR
     Config["config.toml"] --> Catalog["ComponentCatalog"]
@@ -93,6 +121,12 @@ broker_x = "my_tradepilot_plugin:BrokerXDataSourcePlugin"
 插件可以导出插件实例，也可以导出无参数构造的插件类。TradePilot 启动时从
 `tradepilot.data_sources` 组发现并注册它。
 
+数据源扩展的公共基类导入路径是：
+
+```python
+from tradepilot.core.components import DataSourcePlugin, SymbolDiagnostic
+```
+
 腾讯 POC 永远不得用于自动交易。未来接入券商时，应另建数据源插件，不能在
 `TencentGateway.send_order()` 中加入委托实现。
 
@@ -106,6 +140,12 @@ broker_x = "my_tradepilot_plugin:BrokerXDataSourcePlugin"
 ```toml
 [project.entry-points."tradepilot.strategies"]
 breakout_signal = "my_tradepilot_plugin:BreakoutSignalStrategyPlugin"
+```
+
+策略扩展的公共基类导入路径是：
+
+```python
+from tradepilot.core.components import StrategyPlugin
 ```
 
 当配置切换到不同策略类时，TradePilot 会删除同名的旧 CTA 实例并按新类重建，避免把新参数错误地

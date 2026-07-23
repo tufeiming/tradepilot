@@ -10,7 +10,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from tradepilot.config import ConfigError, load_config
+from tradepilot.core.config import ConfigError, load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     os.chdir(config.config_path.parent)
     configure_logging(config.runtime_dir)
 
-    from tradepilot.builtin_components import build_default_catalog
+    from tradepilot.bootstrap import build_default_catalog
 
     catalog = build_default_catalog()
     try:

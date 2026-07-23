@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from tradepilot.config import parse_vt_symbol
+from tradepilot.core.config import parse_vt_symbol
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 QUOTE_URL = "https://qt.gtimg.cn/q="

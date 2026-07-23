@@ -22,13 +22,13 @@ from vnpy.trader.object import (
     TickData,
 )
 
-from tradepilot.config import ConfigError, parse_vt_symbol
-from tradepilot.events import (
+from tradepilot.core.config import ConfigError, parse_vt_symbol
+from tradepilot.core.events import (
     EVENT_TRADEPILOT_FEED,
     FeedStatus,
     FeedStatusEvent,
 )
-from tradepilot.tencent import (
+from tradepilot.data_sources.tencent.client import (
     SHANGHAI_TZ,
     TencentClient,
     TencentError,

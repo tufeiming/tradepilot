@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from tradepilot.builtin_components import build_default_catalog
-from tradepilot.config import ConfigError, load_config, parse_vt_symbol
+from tradepilot.bootstrap import build_default_catalog
+from tradepilot.core.config import ConfigError, load_config, parse_vt_symbol
 
 
 def write_config(path: Path, body: str) -> Path:

@@ -5,18 +5,18 @@ from datetime import datetime
 import requests
 from vnpy.event import Event, EventEngine
 
-from tradepilot.events import (
+from tradepilot.core.events import (
     EVENT_TRADEPILOT_SIGNAL,
     SignalDirection,
     SignalEvent,
 )
-from tradepilot.notifier import (
+from tradepilot.data_sources.tencent.client import SHANGHAI_TZ
+from tradepilot.notifications.feishu import (
     FeishuClient,
     NotificationService,
     NotificationStore,
     make_feishu_signature,
 )
-from tradepilot.tencent import SHANGHAI_TZ
 
 
 class FakeResponse:

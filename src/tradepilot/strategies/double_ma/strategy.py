@@ -16,7 +16,7 @@ from vnpy_ctastrategy import (
     TradeData,
 )
 
-from tradepilot.events import (
+from tradepilot.core.events import (
     EVENT_TRADEPILOT_SIGNAL,
     SignalDirection,
     SignalEvent,
