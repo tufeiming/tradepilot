@@ -1,0 +1,16 @@
+[monitor]
+symbols = ["515080.SSE"]
+poll_interval_seconds = 3.0
+stale_after_seconds = 30.0
+minimum_history_bars = 100
+
+[strategy]
+fast_window = 10
+slow_window = 20
+
+[feishu]
+enabled = true
+
+# Secrets are environment variables and must never be placed in this file:
+# TRADEPILOT_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/...
+# TRADEPILOT_FEISHU_SECRET=optional-signature-secret
