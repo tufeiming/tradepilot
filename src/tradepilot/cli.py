@@ -57,14 +57,23 @@ def main(argv: list[str] | None = None) -> int:
     os.chdir(config.config_path.parent)
     configure_logging(config.runtime_dir)
 
+    from tradepilot.builtin_components import build_default_catalog
+
+    catalog = build_default_catalog()
+    try:
+        catalog.validate(config)
+    except ConfigError as exc:
+        print(f"配置错误：{exc}", file=sys.stderr)
+        return 2
+
     if args.command == "doctor":
         from tradepilot.doctor import run_doctor
 
-        return run_doctor(config, send_test=args.send_test)
+        return run_doctor(config, send_test=args.send_test, catalog=catalog)
 
     from tradepilot.app import TradePilotApp
 
-    application = TradePilotApp(config)
+    application = TradePilotApp(config, catalog)
 
     def request_stop(signum=None, frame=None) -> None:
         application.request_stop()

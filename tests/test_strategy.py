@@ -67,7 +67,12 @@ def build_strategy():
         engine,
         "tradepilot_515080_sse",
         "515080.SSE",
-        {"fast_window": 2, "slow_window": 3, "history_size": 5},
+        {
+            "fast_window": 2,
+            "slow_window": 3,
+            "history_size": 5,
+            "data_source": "Test Feed",
+        },
     )
     strategy.on_init()
     return strategy, engine
@@ -93,6 +98,7 @@ def test_tick_to_bar_pipeline_emits_one_buy_and_one_sell():
         SignalDirection.BUY,
         SignalDirection.SELL,
     ]
+    assert {signal.source for signal in signals} == {"Test Feed"}
 
 
 def test_stop_does_not_finalize_an_incomplete_minute():

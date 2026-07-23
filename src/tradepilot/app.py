@@ -7,37 +7,46 @@ import threading
 import time
 from concurrent.futures import Future
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from vnpy.event import Event, EventEngine
 from vnpy.trader.engine import MainEngine
 from vnpy_ctastrategy import CtaEngine, CtaStrategyApp
 
+from tradepilot.builtin_components import build_default_catalog
+from tradepilot.components import ComponentCatalog
 from tradepilot.config import AppConfig
 from tradepilot.events import EVENT_TRADEPILOT_FEED, FeedStatus, FeedStatusEvent
-from tradepilot.gateway import TencentGateway
 from tradepilot.notifier import FeishuClient, NotificationService, NotificationStore
-from tradepilot.strategy import DoubleMaSignalStrategy
-from tradepilot.tencent import SHANGHAI_TZ
 
 LOGGER = logging.getLogger(__name__)
-STRATEGY_PREFIX = "tradepilot_"
+MARKET_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class TradePilotApp:
     """Owns engines, strategies, notification delivery, and graceful shutdown."""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        catalog: ComponentCatalog | None = None,
+    ) -> None:
         self.config = config
+        self.catalog = catalog or build_default_catalog()
+        self.catalog.validate(config)
+        self.data_source = self.catalog.data_sources.get(config.data_source.name)
+        self.strategy_plugin = self.catalog.strategies.get(config.strategy.name)
         self.stop_event = threading.Event()
         self.event_engine = EventEngine()
         self.main_engine = MainEngine(self.event_engine)
         try:
-            self.main_engine.add_gateway(TencentGateway)
+            self.main_engine.add_gateway(self.data_source.gateway_class)
             self.cta_engine: CtaEngine = self.main_engine.add_app(CtaStrategyApp)
         except Exception:
             self.main_engine.close()
             raise
-        self.cta_engine.classes[DoubleMaSignalStrategy.__name__] = DoubleMaSignalStrategy
+        strategy_class = self.strategy_plugin.strategy_class
+        self.cta_engine.classes[strategy_class.__name__] = strategy_class
 
         client = None
         if config.feishu.enabled and config.feishu.webhook_url:
@@ -52,12 +61,8 @@ class TradePilotApp:
     def start(self) -> int:
         self.notifier.start()
         self.main_engine.connect(
-            {
-                "symbols": list(self.config.monitor.symbols),
-                "poll_interval_seconds": self.config.monitor.poll_interval_seconds,
-                "stale_after_seconds": self.config.monitor.stale_after_seconds,
-            },
-            TencentGateway.default_name,
+            self.data_source.connection_settings(self.config),
+            self.data_source.gateway_class.default_name,
         )
         self._wait_for_contracts()
         self.cta_engine.init_engine()
@@ -71,16 +76,16 @@ class TradePilotApp:
             except Exception as exc:
                 LOGGER.exception("Strategy initialization failed: %s", strategy_name)
                 self.notifier.enqueue(
-                    f"strategy-init-error|{strategy_name}|{datetime.now(SHANGHAI_TZ):%Y%m%d}",
+                    f"strategy-init-error|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
                     f"[策略初始化失败] {strategy_name}\n{exc}",
                 )
                 continue
 
             strategy = self.cta_engine.strategies[strategy_name]
-            if not getattr(strategy, "history_ready", False):
-                count = getattr(strategy, "history_count", 0)
+            history_ready, count = self.strategy_plugin.readiness(strategy)
+            if not history_ready:
                 self.notifier.enqueue(
-                    f"strategy-not-ready|{strategy_name}|{datetime.now(SHANGHAI_TZ):%Y%m%d}",
+                    f"strategy-not-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
                     f"[策略未就绪] {strategy_name}\n历史分钟线 {count}/"
                     f"{self.config.monitor.minimum_history_bars}，本次不启动",
                 )
@@ -89,17 +94,18 @@ class TradePilotApp:
             self.cta_engine.start_strategy(strategy_name)
             ready += 1
             self.notifier.enqueue(
-                f"strategy-ready|{strategy_name}|{datetime.now(SHANGHAI_TZ):%Y%m%d}",
+                f"strategy-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
                 f"[策略就绪] {strategy_name}\n"
-                f"MA{self.config.strategy.fast_window}/MA{self.config.strategy.slow_window}\n"
+                f"{self.strategy_plugin.configuration_summary(self.config)}\n"
                 "运行模式：仅通知，委托已禁用",
             )
 
         self._started = True
         self.notifier.enqueue(
-            f"app-start|{datetime.now(SHANGHAI_TZ):%Y%m%d%H%M%S}",
+            f"app-start|{datetime.now(MARKET_TZ):%Y%m%d%H%M%S}",
             f"[TradePilot启动]\n配置 {len(self._managed_names)} 个标的，"
-            f"成功启动 {ready} 个策略\n数据源：Tencent POC",
+            f"成功启动 {ready} 个策略\n数据源：{self.data_source.display_name}\n"
+            f"策略：{self.strategy_plugin.display_name}",
         )
         return ready
 
@@ -112,7 +118,7 @@ class TradePilotApp:
     def close(self) -> None:
         if self._closed:
             return
-        occurred_at = datetime.now(SHANGHAI_TZ)
+        occurred_at = datetime.now(MARKET_TZ)
         if self._started:
             self.notifier.enqueue(
                 f"app-stop|{occurred_at:%Y%m%d%H%M%S}",
@@ -127,26 +133,30 @@ class TradePilotApp:
 
     def _reconcile_strategies(self) -> None:
         expected = {
-            strategy_name(vt_symbol): vt_symbol for vt_symbol in self.config.monitor.symbols
+            self.strategy_plugin.instance_name(vt_symbol): vt_symbol
+            for vt_symbol in self.config.monitor.symbols
         }
         managed_existing = {
-            name for name in self.cta_engine.strategies if name.startswith(STRATEGY_PREFIX)
+            name
+            for name in self.cta_engine.strategies
+            if name.startswith(self.strategy_plugin.managed_prefix)
         }
 
         for stale_name in sorted(managed_existing - expected.keys()):
             self.cta_engine.remove_strategy(stale_name)
 
-        setting = {
-            "fast_window": self.config.strategy.fast_window,
-            "slow_window": self.config.strategy.slow_window,
-            "history_size": self.config.monitor.minimum_history_bars,
-        }
+        setting = self.strategy_plugin.engine_settings(self.config, self.data_source)
+        strategy_class = self.strategy_plugin.strategy_class
         for name, vt_symbol in expected.items():
-            if name in self.cta_engine.strategies:
+            existing = self.cta_engine.strategies.get(name)
+            if existing is not None and existing.__class__ is not strategy_class:
+                self.cta_engine.remove_strategy(name)
+                existing = None
+            if existing is not None:
                 self.cta_engine.edit_strategy(name, setting)
             else:
                 self.cta_engine.add_strategy(
-                    DoubleMaSignalStrategy.__name__,
+                    strategy_class.__name__,
                     name,
                     vt_symbol,
                     setting,
@@ -167,7 +177,8 @@ class TradePilotApp:
                 time.sleep(0.01)
         if missing:
             raise RuntimeError(
-                "Tencent gateway did not publish contracts: " + ", ".join(sorted(missing))
+                f"{self.data_source.display_name} did not publish contracts: "
+                + ", ".join(sorted(missing))
             )
 
     def _on_feed_control(self, event: Event) -> None:
@@ -177,9 +188,4 @@ class TradePilotApp:
         for name in self._managed_names:
             strategy = self.cta_engine.strategies.get(name)
             if strategy and strategy.trading:
-                strategy.flush_bar()
-
-
-def strategy_name(vt_symbol: str) -> str:
-    symbol, exchange = vt_symbol.split(".")
-    return f"{STRATEGY_PREFIX}{symbol}_{exchange.lower()}"
+                self.strategy_plugin.on_session_closed(strategy)

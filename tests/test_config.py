@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tradepilot.builtin_components import build_default_catalog
 from tradepilot.config import ConfigError, load_config, parse_vt_symbol
 
 
@@ -11,13 +12,17 @@ def write_config(path: Path, body: str) -> Path:
 
 
 BASE = """
-[monitor]
-symbols = ["515080.SSE", "159915.SZSE"]
+[data_source]
+name = "tencent"
 poll_interval_seconds = 3
 stale_after_seconds = 30
+
+[monitor]
+symbols = ["515080.SSE", "159915.SZSE"]
 minimum_history_bars = 100
 
 [strategy]
+name = "double_ma_signal"
 fast_window = 10
 slow_window = 20
 
@@ -28,8 +33,11 @@ enabled = false
 
 def test_load_valid_config(tmp_path):
     config = load_config(write_config(tmp_path / "config.toml", BASE), environ={})
+    build_default_catalog(discover=False).validate(config)
     assert config.monitor.symbols == ("515080.SSE", "159915.SZSE")
-    assert config.strategy.fast_window == 10
+    assert config.data_source.name == "tencent"
+    assert config.strategy.name == "double_ma_signal"
+    assert config.strategy.settings["fast_window"] == 10
     assert config.runtime_dir == tmp_path / ".vntrader"
 
 
@@ -51,16 +59,27 @@ def test_rejects_duplicate_symbols(tmp_path):
         load_config(write_config(tmp_path / "config.toml", body), environ={})
 
 
+def test_rejects_component_settings_left_in_monitor_section(tmp_path):
+    body = BASE.replace(
+        "minimum_history_bars = 100",
+        "minimum_history_bars = 100\npoll_interval_seconds = 3",
+    )
+    with pytest.raises(ConfigError, match="unknown monitor setting"):
+        load_config(write_config(tmp_path / "config.toml", body), environ={})
+
+
 def test_rejects_invalid_strategy_windows(tmp_path):
     body = BASE.replace("fast_window = 10", "fast_window = 20")
     with pytest.raises(ConfigError, match="fast_window"):
-        load_config(write_config(tmp_path / "config.toml", body), environ={})
+        config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+        build_default_catalog(discover=False).validate(config)
 
 
 def test_history_warmup_cannot_be_configured_below_100(tmp_path):
     body = BASE.replace("minimum_history_bars = 100", "minimum_history_bars = 99")
     with pytest.raises(ConfigError, match="minimum_history_bars"):
-        load_config(write_config(tmp_path / "config.toml", body), environ={})
+        config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+        build_default_catalog(discover=False).validate(config)
 
 
 def test_requires_webhook_when_feishu_enabled(tmp_path):

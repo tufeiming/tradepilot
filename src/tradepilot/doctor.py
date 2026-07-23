@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
+from zoneinfo import ZoneInfo
 
+from tradepilot.builtin_components import build_default_catalog
+from tradepilot.components import ComponentCatalog
 from tradepilot.config import AppConfig
 from tradepilot.notifier import FeishuClient
-from tradepilot.tencent import SHANGHAI_TZ, TencentClient, is_trading_session
 
 EXPECTED_VERSIONS = {
     "vnpy": "4.4.0",
@@ -16,7 +18,12 @@ EXPECTED_VERSIONS = {
 }
 
 
-def run_doctor(config: AppConfig, *, send_test: bool = False) -> int:
+def run_doctor(
+    config: AppConfig,
+    *,
+    send_test: bool = False,
+    catalog: ComponentCatalog | None = None,
+) -> int:
     failures: list[str] = []
     for package, expected in EXPECTED_VERSIONS.items():
         try:
@@ -28,40 +35,35 @@ def run_doctor(config: AppConfig, *, send_test: bool = False) -> int:
         if not ok:
             failures.append(f"{package} version mismatch")
 
-    client = TencentClient()
-    now = datetime.now(SHANGHAI_TZ)
-    try:
-        quotes = {item.vt_symbol: item for item in client.fetch_quotes(config.monitor.symbols)}
-    except Exception as exc:
-        quotes = {}
-        failures.append(f"Tencent quote request failed: {exc}")
-        print(f"[FAIL] 腾讯实时行情: {exc}")
+    selected_catalog = catalog or build_default_catalog()
+    selected_catalog.validate(config)
+    data_source = selected_catalog.data_sources.get(config.data_source.name)
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    print(f"[INFO] data_source: {config.data_source.name} ({data_source.display_name})")
+    print(f"[INFO] strategy: {config.strategy.name}")
 
-    for vt_symbol in config.monitor.symbols:
-        quote = quotes.get(vt_symbol)
-        if quote is None:
-            failures.append(f"missing quote for {vt_symbol}")
-            print(f"[FAIL] {vt_symbol}: 无实时报价")
+    for diagnostic in data_source.diagnose(config, now):
+        vt_symbol = diagnostic.vt_symbol
+        if diagnostic.quote_error or diagnostic.price is None or diagnostic.quote_time is None:
+            error = diagnostic.quote_error or "provider returned an incomplete quote diagnostic"
+            failures.append(f"quote failed for {vt_symbol}: {error}")
+            print(f"[FAIL] {vt_symbol}: 实时报价检查失败：{error}")
         else:
-            age = (now - quote.timestamp).total_seconds()
-            stale = is_trading_session(now) and (
-                quote.timestamp.date() != now.date() or age > config.monitor.stale_after_seconds
-            )
             print(
-                f"[{'FAIL' if stale else 'OK'}] {vt_symbol}: "
-                f"{quote.last_price:.4f}, 行情时间 {quote.timestamp:%Y-%m-%d %H:%M:%S}"
+                f"[{'FAIL' if diagnostic.quote_stale else 'OK'}] {vt_symbol}: "
+                f"{diagnostic.price:.4f}, "
+                f"行情时间 {diagnostic.quote_time:%Y-%m-%d %H:%M:%S}"
             )
-            if stale:
+            if diagnostic.quote_stale:
                 failures.append(f"stale quote for {vt_symbol}")
 
-        try:
-            history = client.fetch_history(vt_symbol, now=now)
-        except Exception as exc:
-            failures.append(f"history failed for {vt_symbol}: {exc}")
-            print(f"[FAIL] {vt_symbol}: 分钟历史加载失败：{exc}")
+        if diagnostic.history_error:
+            failures.append(f"history failed for {vt_symbol}: {diagnostic.history_error}")
+            print(f"[FAIL] {vt_symbol}: 分钟历史加载失败：{diagnostic.history_error}")
         else:
-            enough = len(history) >= config.monitor.minimum_history_bars
-            print(f"[{'OK' if enough else 'FAIL'}] {vt_symbol}: {len(history)} 根已完成分钟线")
+            history_bars = diagnostic.history_bars or 0
+            enough = history_bars >= config.monitor.minimum_history_bars
+            print(f"[{'OK' if enough else 'FAIL'}] {vt_symbol}: {history_bars} 根已完成分钟线")
             if not enough:
                 failures.append(f"insufficient history for {vt_symbol}")
 

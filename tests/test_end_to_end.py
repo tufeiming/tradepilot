@@ -85,7 +85,12 @@ def test_fake_tencent_tick_to_ma_cross_to_feishu(tmp_path):
         FakeCtaEngine(event_engine, history),
         "tradepilot_515080_sse",
         "515080.SSE",
-        {"fast_window": 2, "slow_window": 3, "history_size": 5},
+        {
+            "fast_window": 2,
+            "slow_window": 3,
+            "history_size": 5,
+            "data_source": "Tencent POC",
+        },
     )
 
     try:

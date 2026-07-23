@@ -31,6 +31,7 @@ class DoubleMaSignalStrategy(CtaTemplate):
     fast_window: int = 10
     slow_window: int = 20
     history_size: int = 100
+    data_source: str = "unknown"
 
     fast_ma0: float = 0.0
     fast_ma1: float = 0.0
@@ -39,7 +40,7 @@ class DoubleMaSignalStrategy(CtaTemplate):
     history_count: int = 0
     history_ready: bool = False
 
-    parameters = ["fast_window", "slow_window", "history_size"]
+    parameters = ["fast_window", "slow_window", "history_size", "data_source"]
     variables: list[str] = []
 
     def on_init(self) -> None:
@@ -88,6 +89,7 @@ class DoubleMaSignalStrategy(CtaTemplate):
                 price=bar.close_price,
                 fast_ma=self.fast_ma0,
                 slow_ma=self.slow_ma0,
+                source=self.data_source,
             )
             self.cta_engine.event_engine.put(Event(EVENT_TRADEPILOT_SIGNAL, signal))
 

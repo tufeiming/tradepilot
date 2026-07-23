@@ -2,6 +2,7 @@
 
 TradePilot 是基于 VeighNa 的 A股/ETF 无界面信号监控程序。当前版本使用腾讯公开接口作为
 POC 行情源，以一分钟 MA10/MA20 交叉产生买入关注和卖出关注，并通过飞书自定义机器人通知。
+数据源和策略通过组件注册表选择，可由配置切换或通过独立 Python 扩展包替换。
 
 > 当前版本只能监控，不能交易。`TencentGateway.send_order()` 会直接抛出异常，腾讯公开接口
 > 也不得用于未来的自动交易环境。
@@ -52,13 +53,17 @@ uv run tradepilot monitor
 自选列表采用 VeighNa 标准代码：
 
 ```toml
-[monitor]
-symbols = ["515080.SSE", "159915.SZSE"]
+[data_source]
+name = "tencent"
 poll_interval_seconds = 3.0
 stale_after_seconds = 30.0
+
+[monitor]
+symbols = ["515080.SSE", "159915.SZSE"]
 minimum_history_bars = 100
 
 [strategy]
+name = "double_ma_signal"
 fast_window = 10
 slow_window = 20
 
@@ -68,6 +73,11 @@ enabled = true
 
 每个标的运行一个独立 CTA 策略实例。历史回放只预热指标，不发送旧信号；正式启动后仅在完整
 一分钟K线上的严格金叉或死叉产生一次通知。
+
+## 设计文档
+
+- [基线策略：一分钟双均线信号](docs/baseline-strategy.md)
+- [数据源与策略扩展架构](docs/architecture.md)
 
 ## 测试
 
