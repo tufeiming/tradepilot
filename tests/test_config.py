@@ -73,14 +73,12 @@ def test_watchlist_summary_lists_all_instruments():
         "515080.SSE": SimpleNamespace(name="515080", symbol="515080"),
     }
     app = object.__new__(TradePilotApp)
-    app.config = SimpleNamespace(
-        monitor=SimpleNamespace(symbols=("600011.SSE", "515080.SSE"))
-    )
+    app.config = SimpleNamespace(monitor=SimpleNamespace(symbols=("600011.SSE", "515080.SSE")))
     app.main_engine = SimpleNamespace(get_contract=contracts.get)
 
-    assert app._watchlist_summary() == (
-        "监听标的：\n- 华能国际（600011.SSE）\n- 515080.SSE"
-    )
+    assert app._watchlist_summary() == ("监听标的：\n- 华能国际（600011.SSE）\n- 515080.SSE")
+    assert app._watchlist_summary(["600011.SSE"]) == ("监听标的：\n- 华能国际（600011.SSE）")
+    assert app._watchlist_summary([]) == "监听标的：\n- 无"
 
 
 @pytest.mark.parametrize(

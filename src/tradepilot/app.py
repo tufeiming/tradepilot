@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Iterable
 from concurrent.futures import Future
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -79,7 +80,7 @@ class TradePilotApp:
         self.cta_engine.init_engine()
         self._reconcile_strategies()
 
-        ready = 0
+        ready_symbols: set[str] = set()
         for strategy_name in sorted(self._managed_names):
             future: Future = self.cta_engine.init_strategy(strategy_name)
             try:
@@ -103,17 +104,13 @@ class TradePilotApp:
                 continue
 
             self.cta_engine.start_strategy(strategy_name)
-            ready += 1
-            instrument_label = self._instrument_label(strategy.vt_symbol)
-            self.notifier.enqueue(
-                f"strategy-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
-                f"[策略就绪] {instrument_label}\n"
-                f"{self.strategy_plugin.configuration_summary(self.config)}\n"
-                "运行模式：notify（仅通知，委托已禁用）",
-            )
+            ready_symbols.add(strategy.vt_symbol)
 
         self._started = True
-        watchlist = self._watchlist_summary()
+        ready = len(ready_symbols)
+        watchlist = self._watchlist_summary(
+            vt_symbol for vt_symbol in self.config.monitor.symbols if vt_symbol in ready_symbols
+        )
         self.notifier.enqueue(
             f"app-start|{datetime.now(MARKET_TZ):%Y%m%d%H%M%S}",
             f"[TradePilot启动]\n配置 {len(self._managed_names)} 个标的，"
@@ -200,11 +197,11 @@ class TradePilotApp:
             return f"{contract.name}（{vt_symbol}）"
         return vt_symbol
 
-    def _watchlist_summary(self) -> str:
-        labels = (
-            self._instrument_label(vt_symbol) for vt_symbol in self.config.monitor.symbols
-        )
-        return "监听标的：\n" + "\n".join(f"- {label}" for label in labels)
+    def _watchlist_summary(self, vt_symbols: Iterable[str] | None = None) -> str:
+        symbols = self.config.monitor.symbols if vt_symbols is None else vt_symbols
+        labels = (self._instrument_label(vt_symbol) for vt_symbol in symbols)
+        watchlist = "\n".join(f"- {label}" for label in labels)
+        return f"监听标的：\n{watchlist or '- 无'}"
 
     def _on_feed_control(self, event: Event) -> None:
         status: FeedStatusEvent = event.data
