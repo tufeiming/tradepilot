@@ -7,6 +7,7 @@ import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 VT_SYMBOL_PATTERN = re.compile(r"^(?P<symbol>\d{6})\.(?P<exchange>SSE|SZSE)$")
@@ -16,6 +17,14 @@ SZSE_PREFIXES = ("0", "1", "3")
 
 class ConfigError(ValueError):
     """Raised when the local configuration is unsafe or invalid."""
+
+
+class ExecutionMode(StrEnum):
+    """Runtime execution modes, independent from historical backtesting."""
+
+    NOTIFY = "notify"
+    PAPER = "paper"
+    LIVE = "live"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +42,11 @@ class ComponentConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionConfig:
+    mode: ExecutionMode = ExecutionMode.NOTIFY
+
+
+@dataclass(frozen=True, slots=True)
 class FeishuConfig:
     enabled: bool
     webhook_url: str | None
@@ -44,6 +58,7 @@ class AppConfig:
     monitor: MonitorConfig
     data_source: ComponentConfig
     strategy: ComponentConfig
+    execution: ExecutionConfig
     feishu: FeishuConfig
     config_path: Path
 
@@ -85,8 +100,10 @@ def load_config(
     monitor_raw = _table(raw, "monitor")
     data_source_raw = _table(raw, "data_source")
     strategy_raw = _table(raw, "strategy")
+    execution_raw = _table(raw, "execution")
     feishu_raw = _table(raw, "feishu")
     _reject_unknown(monitor_raw, {"symbols", "minimum_history_bars"}, "monitor")
+    _reject_unknown(execution_raw, {"mode"}, "execution")
 
     symbols_value = monitor_raw.get("symbols", [])
     if not isinstance(symbols_value, list) or not symbols_value:
@@ -110,6 +127,15 @@ def load_config(
 
     data_source = _component(data_source_raw, "data_source", "tencent")
     strategy = _component(strategy_raw, "strategy", "double_ma_signal")
+
+    execution_value = execution_raw.get("mode", ExecutionMode.NOTIFY.value)
+    if not isinstance(execution_value, str):
+        raise ConfigError("execution.mode must be a string")
+    try:
+        execution_mode = ExecutionMode(execution_value.strip().lower())
+    except ValueError as exc:
+        allowed = ", ".join(mode.value for mode in ExecutionMode)
+        raise ConfigError(f"execution.mode must be one of: {allowed}") from exc
 
     env = os.environ if environ is None else environ
     enabled = feishu_raw.get("enabled", True)
@@ -136,6 +162,7 @@ def load_config(
         ),
         data_source=data_source,
         strategy=strategy,
+        execution=ExecutionConfig(mode=execution_mode),
         feishu=FeishuConfig(enabled=enabled, webhook_url=webhook_url, secret=secret),
         config_path=config_path,
     )

@@ -1,12 +1,15 @@
+import json
 from datetime import datetime
 
 import pytest
 
 from tradepilot.data_sources.tencent.client import (
     SHANGHAI_TZ,
+    TencentClient,
     TencentDataError,
     from_tencent_symbol,
     is_trading_session,
+    parse_daily_history_response,
     parse_history_response,
     parse_quote_response,
     to_tencent_symbol,
@@ -126,6 +129,67 @@ def test_history_range_keeps_cumulative_delta_and_accepts_naive_times():
     assert bars[0].volume == pytest.approx(10)
     assert bars[0].turnover == pytest.approx(200)
     assert bars[0].timestamp.tzinfo == SHANGHAI_TZ
+
+
+def daily_payload(rows):
+    return {"code": 0, "data": {"sh515080": {"qfqday": rows}}}
+
+
+def test_parse_daily_history_uses_adjusted_ohlcv_and_skips_incomplete_day():
+    bars = parse_daily_history_response(
+        daily_payload(
+            [
+                ["2026-07-22", "1.50", "1.55", "1.56", "1.49", "1000"],
+                ["2026-07-23", "1.55", "1.54", "1.57", "1.53", "900"],
+            ]
+        ),
+        "515080.SSE",
+        now=datetime(2026, 7, 23, 14, 30, tzinfo=SHANGHAI_TZ),
+    )
+
+    assert len(bars) == 1
+    assert bars[0].timestamp.strftime("%Y-%m-%d") == "2026-07-22"
+    assert bars[0].open_price == pytest.approx(1.50)
+    assert bars[0].high_price == pytest.approx(1.56)
+    assert bars[0].low_price == pytest.approx(1.49)
+    assert bars[0].close_price == pytest.approx(1.55)
+    assert bars[0].volume == pytest.approx(1000)
+
+
+def test_daily_history_pages_backwards_to_requested_start():
+    requested_params = []
+
+    class Response:
+        def __init__(self, rows):
+            self.content = json.dumps(daily_payload(rows)).encode()
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, *, params, headers, timeout):
+        requested_params.append(params["param"])
+        if ",2026-01-03," in params["param"]:
+            return Response(
+                [
+                    ["2026-01-02", "1", "1.1", "1.2", "0.9", "10"],
+                    ["2026-01-03", "1.1", "1.2", "1.3", "1", "20"],
+                ]
+            )
+        return Response([["2026-01-01", "0.9", "1", "1.1", "0.8", "30"]])
+
+    bars = TencentClient(get=fake_get, retries=1).fetch_daily_history(
+        "515080.SSE",
+        now=datetime(2026, 1, 4, tzinfo=SHANGHAI_TZ),
+        start=datetime(2026, 1, 1),
+        end=datetime(2026, 1, 3),
+    )
+
+    assert [bar.timestamp.strftime("%Y-%m-%d") for bar in bars] == [
+        "2026-01-01",
+        "2026-01-02",
+        "2026-01-03",
+    ]
+    assert len(requested_params) == 2
 
 
 @pytest.mark.parametrize(

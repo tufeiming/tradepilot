@@ -17,6 +17,8 @@ from tradepilot.core.config import (
     AppConfig,
     ComponentConfig,
     ConfigError,
+    ExecutionConfig,
+    ExecutionMode,
     FeishuConfig,
     MonitorConfig,
 )
@@ -43,6 +45,7 @@ def make_config(
             if strategy == "double_ma_signal"
             else {},
         ),
+        execution=ExecutionConfig(mode=ExecutionMode.NOTIFY),
         feishu=FeishuConfig(enabled=False, webhook_url=None, secret=None),
         config_path=Path("config.toml"),
     )
@@ -67,6 +70,11 @@ def test_default_catalog_builds_selected_component_settings():
         "history_size": 100,
         "data_source": "Tencent POC",
     }
+    research_class = strategy.get_backtest_strategy_class(config)
+    assert research_class is not None
+    assert research_class.fast_window == 10
+    assert research_class.slow_window == 20
+    assert research_class.history_size == 100
 
 
 def test_catalog_rejects_unknown_selected_component():

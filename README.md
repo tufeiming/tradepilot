@@ -1,8 +1,8 @@
 # TradePilot
 
-TradePilot 是基于 VeighNa 的 A股/ETF 无界面信号监控程序。当前版本使用腾讯公开接口作为
+TradePilot 是基于 VeighNa 的 A股/ETF 信号监控和策略研究程序。当前版本使用腾讯公开接口作为
 POC 行情源，以一分钟 MA10/MA20 交叉产生买入关注和卖出关注，并通过飞书自定义机器人通知。
-数据源和策略通过组件注册表选择，可由配置切换或通过独立 Python 扩展包替换。
+策略研究直接复用 VeighNa 官方 CtaBacktester GUI；数据源和策略均可由配置或扩展包替换。
 
 > 当前版本只能监控，不能交易。`TencentGateway.send_order()` 会直接抛出异常，腾讯公开接口
 > 也不得用于未来的自动交易环境。
@@ -10,7 +10,9 @@ POC 行情源，以一分钟 MA10/MA20 交叉产生买入关注和卖出关注�
 ## 环境
 
 - Python 3.13
+- `pandas==2.2.3`（兼容官方回测 GUI）
 - `vnpy==4.4.0`
+- `vnpy_ctabacktester==1.3.0`
 - `vnpy_ctastrategy==1.4.1`
 - `vnpy_sqlite==1.1.3`
 - Windows 或 Linux
@@ -67,6 +69,9 @@ name = "double_ma_signal"
 fast_window = 10
 slow_window = 20
 
+[execution]
+mode = "notify"
+
 [feishu]
 enabled = true
 ```
@@ -74,10 +79,31 @@ enabled = true
 每个标的运行一个独立 CTA 策略实例。历史回放只预热指标，不发送旧信号；正式启动后仅在完整
 一分钟K线上的严格金叉或死叉产生一次通知。
 
+`execution.mode` 已固定为稳定接口：`notify`、`paper`、`live`。当前 `monitor` 只允许 `notify`；
+`paper/live` 会在创建 VeighNa 引擎前被拒绝。历史模拟交易必须使用下面的回测命令，它不会连接
+券商交易接口，也不会改变实时运行模式。
+
+## 图形化回测
+
+```powershell
+uv run tradepilot backtest
+```
+
+命令会连接配置中的只读行情 Gateway，并直接打开 VeighNa 官方 CTA回测窗口。内置
+`DoubleMaLongBacktestStrategy` 与实时策略共用严格 MA 交叉计算，但只在 `BACKTESTING` 引擎中
+把 BUY/SELL 转为多头模拟成交；误放到实盘 CTA 引擎会立即拒绝启动。
+
+要验证长区间流程，可在回测窗口下载 `515080.SSE` 从 `2019/12/27` 至最近完整交易日的 `d` 数据，
+再选择该策略运行。Gateway 会分页获取上市以来的前复权日线。腾讯 `1m` 数据仍只有最近约 5 个
+交易日，且历史 OHLC 使用分钟收盘价填充；日线测试和分钟测试都不能证明策略长期有效。
+第一次接触项目时，直接按照 [从零验证长期回测流程](docs/backtesting.md#场景从零验证长期回测流程)
+完成环境、配置、下载、回测和结果检查；不需要先阅读架构代码。
+
 ## 设计文档
 
 - [基线策略：一分钟双均线信号](docs/baseline-strategy.md)
 - [数据源与策略扩展架构](docs/architecture.md)
+- [图形化回测与运行模式](docs/backtesting.md)
 
 ## 测试
 

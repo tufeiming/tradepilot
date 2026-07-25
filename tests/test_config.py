@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tradepilot.app import TradePilotApp
 from tradepilot.bootstrap import build_default_catalog
 from tradepilot.core.config import ConfigError, load_config, parse_vt_symbol
 
@@ -26,6 +27,9 @@ name = "double_ma_signal"
 fast_window = 10
 slow_window = 20
 
+[execution]
+mode = "notify"
+
 [feishu]
 enabled = false
 """
@@ -38,6 +42,7 @@ def test_load_valid_config(tmp_path):
     assert config.data_source.name == "tencent"
     assert config.strategy.name == "double_ma_signal"
     assert config.strategy.settings["fast_window"] == 10
+    assert config.execution.mode.value == "notify"
     assert config.runtime_dir == tmp_path / ".vntrader"
 
 
@@ -117,3 +122,25 @@ def test_rejects_non_string_toml_webhook(tmp_path):
     body = BASE.replace("enabled = false", "enabled = true\nwebhook_url = 123")
     with pytest.raises(ConfigError, match="must be a string"):
         load_config(write_config(tmp_path / "config.toml", body), environ={})
+
+
+@pytest.mark.parametrize("mode", ["notify", "paper", "live"])
+def test_accepts_declared_execution_modes(tmp_path, mode):
+    body = BASE.replace('mode = "notify"', f'mode = "{mode}"')
+    config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+    assert config.execution.mode.value == mode
+
+
+def test_rejects_unknown_execution_mode(tmp_path):
+    body = BASE.replace('mode = "notify"', 'mode = "unsafe"')
+    with pytest.raises(ConfigError, match="execution.mode"):
+        load_config(write_config(tmp_path / "config.toml", body), environ={})
+
+
+@pytest.mark.parametrize("mode", ["paper", "live"])
+def test_monitor_rejects_order_capable_execution_modes(tmp_path, mode):
+    body = BASE.replace('mode = "notify"', f'mode = "{mode}"')
+    config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+
+    with pytest.raises(ConfigError, match="only execution.mode='notify'"):
+        TradePilotApp(config, build_default_catalog(discover=False))

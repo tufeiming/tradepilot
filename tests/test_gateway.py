@@ -5,7 +5,7 @@ from vnpy.event import EventEngine
 from vnpy.trader.constant import Direction, Exchange, Interval, OrderType
 from vnpy.trader.object import HistoryRequest, OrderRequest
 
-from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, MinuteSnapshot
+from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, DailySnapshot, MinuteSnapshot
 from tradepilot.data_sources.tencent.gateway import (
     TencentGateway,
     TradingDisabledError,
@@ -55,4 +55,35 @@ def test_gateway_converts_history_to_vnpy_bars():
     bars = gateway.query_history(request)
     assert len(bars) == 1
     assert bars[0].vt_symbol == "515080.SSE"
+    assert bars[0].close_price == pytest.approx(1.55)
+
+
+def test_gateway_converts_daily_history_to_vnpy_bars():
+    gateway = TencentGateway(EventEngine(), "TENCENT")
+    gateway.client.fetch_daily_history = lambda *args, **kwargs: [
+        DailySnapshot(
+            symbol="515080",
+            exchange="SSE",
+            timestamp=datetime(2026, 7, 22, tzinfo=SHANGHAI_TZ),
+            open_price=1.50,
+            high_price=1.56,
+            low_price=1.49,
+            close_price=1.55,
+            volume=1000,
+        )
+    ]
+    request = HistoryRequest(
+        symbol="515080",
+        exchange=Exchange.SSE,
+        start=datetime(2020, 1, 1, tzinfo=SHANGHAI_TZ),
+        interval=Interval.DAILY,
+    )
+
+    bars = gateway.query_history(request)
+
+    assert len(bars) == 1
+    assert bars[0].interval is Interval.DAILY
+    assert bars[0].open_price == pytest.approx(1.50)
+    assert bars[0].high_price == pytest.approx(1.56)
+    assert bars[0].low_price == pytest.approx(1.49)
     assert bars[0].close_price == pytest.approx(1.55)

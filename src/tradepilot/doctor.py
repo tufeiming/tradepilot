@@ -12,7 +12,9 @@ from tradepilot.core.config import AppConfig
 from tradepilot.notifications.feishu import FeishuClient
 
 EXPECTED_VERSIONS = {
+    "pandas": "2.2.3",
     "vnpy": "4.4.0",
+    "vnpy_ctabacktester": "1.3.0",
     "vnpy_ctastrategy": "1.4.1",
     "vnpy_sqlite": "1.1.3",
 }
@@ -41,6 +43,7 @@ def run_doctor(
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     print(f"[INFO] data_source: {config.data_source.name} ({data_source.display_name})")
     print(f"[INFO] strategy: {config.strategy.name}")
+    print(f"[INFO] execution.mode: {config.execution.mode.value}")
 
     for diagnostic in data_source.diagnose(config, now):
         vt_symbol = diagnostic.vt_symbol
