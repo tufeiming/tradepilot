@@ -19,7 +19,7 @@ from tradepilot.strategies.double_ma.base import DoubleMaStrategyBase
 
 
 class DoubleMaSignalStrategy(DoubleMaStrategyBase):
-    """One-minute double-MA crosses that publish signals and never place orders."""
+    """Completed-bar double-MA crosses that publish signals and never place orders."""
 
     author = "TradePilot"
 

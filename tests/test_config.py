@@ -24,8 +24,9 @@ minimum_history_bars = 100
 
 [strategy]
 name = "double_ma_signal"
+bar_window_minutes = 15
 fast_window = 10
-slow_window = 20
+slow_window = 60
 
 [execution]
 mode = "notify"
@@ -42,6 +43,7 @@ def test_load_valid_config(tmp_path):
     assert config.data_source.name == "tencent"
     assert config.strategy.name == "double_ma_signal"
     assert config.strategy.settings["fast_window"] == 10
+    assert config.strategy.settings["bar_window_minutes"] == 15
     assert config.execution.mode.value == "notify"
     assert config.runtime_dir == tmp_path / ".vntrader"
 
@@ -74,8 +76,15 @@ def test_rejects_component_settings_left_in_monitor_section(tmp_path):
 
 
 def test_rejects_invalid_strategy_windows(tmp_path):
-    body = BASE.replace("fast_window = 10", "fast_window = 20")
+    body = BASE.replace("fast_window = 10", "fast_window = 60")
     with pytest.raises(ConfigError, match="fast_window"):
+        config = load_config(write_config(tmp_path / "config.toml", body), environ={})
+        build_default_catalog(discover=False).validate(config)
+
+
+def test_rejects_unsupported_strategy_timeframe(tmp_path):
+    body = BASE.replace("bar_window_minutes = 15", "bar_window_minutes = 5")
+    with pytest.raises(ConfigError, match="bar_window_minutes"):
         config = load_config(write_config(tmp_path / "config.toml", body), environ={})
         build_default_catalog(discover=False).validate(config)
 

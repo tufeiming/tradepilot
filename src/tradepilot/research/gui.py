@@ -12,14 +12,30 @@ from vnpy_ctabacktester.ui import BacktesterManager
 
 from tradepilot.core.components import ComponentCatalog
 from tradepilot.core.config import AppConfig
+from tradepilot.core.timeframes import BarTimeframe
 from tradepilot.research.backtester import (
     TradePilotBacktesterApp,
+    configure_backtest_history,
     configure_backtest_strategies,
 )
 
 
 class ResearchTradingDisabledError(RuntimeError):
     """Raised when any order reaches the historical research process."""
+
+
+class TradePilotBacktesterManager(BacktesterManager):
+    """Official backtesting widget with TradePilot's explicit 15m choice."""
+
+    default_symbol = "515080.SSE"
+
+    def init_ui(self) -> None:
+        super().init_ui()
+        timeframe = BarTimeframe.MINUTE_15.value
+        if self.interval_combo.findText(timeframe) < 0:
+            self.interval_combo.insertItem(1, timeframe)
+        self.symbol_line.setText(self.default_symbol)
+        self.interval_combo.setCurrentText(timeframe)
 
 
 def make_read_only_gateway(gateway_class: type[BaseGateway]) -> type[BaseGateway]:
@@ -48,6 +64,8 @@ def run_backtest_gui(config: AppConfig, catalog: ComponentCatalog) -> int:
     if research_class is None:
         raise ValueError(f"strategy {strategy_plugin.name!r} does not support backtesting")
     configure_backtest_strategies((research_class,))
+    history_service = data_source.create_history_service(config, config.runtime_dir)
+    configure_backtest_history(history_service)
     research_gateway_class = make_read_only_gateway(data_source.gateway_class)
 
     qapp = create_qapp()
@@ -64,7 +82,8 @@ def run_backtest_gui(config: AppConfig, catalog: ComponentCatalog) -> int:
         main_window = MainWindow(main_engine, event_engine)
         main_window.setWindowTitle("TradePilot 策略研究 - VeighNa CTA回测")
         main_window.showMaximized()
-        main_window.open_widget(BacktesterManager, APP_NAME)
+        TradePilotBacktesterManager.default_symbol = config.monitor.symbols[0]
+        main_window.open_widget(TradePilotBacktesterManager, APP_NAME)
         return qapp.exec()
     finally:
         main_engine.close()

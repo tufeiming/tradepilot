@@ -12,18 +12,24 @@ src/tradepilot/
 ├── cli.py                         # 命令行入口
 ├── doctor.py                      # 只读诊断用例
 ├── research/
-│   ├── backtester.py              # 官方 CtaBacktester 策略注册适配
+│   ├── backtester.py              # 官方回测引擎和 15m 数据适配
 │   └── gui.py                     # 图形化研究入口
 ├── core/
 │   ├── components.py              # 插件抽象、注册表和组件目录
 │   ├── config.py                  # 核心 TOML 配置
-│   └── events.py                  # 稳定事件契约
+│   ├── events.py                  # 稳定事件契约
+│   ├── history.py                 # 历史服务抽象和独立 SQLite 仓库
+│   └── timeframes.py              # 项目级明确周期
 ├── data_sources/
 │   └── tencent/
 │       ├── client.py              # HTTP 客户端和纯解析器
 │       ├── gateway.py             # 只读 VeighNa Gateway
+│       ├── history.py             # 腾讯 15m HistoricalBarService
 │       └── plugin.py              # DataSourcePlugin 适配
+├── runtime/
+│   └── cta.py                     # 实时 CTA 历史预热适配
 ├── strategies/
+│   ├── bars.py                    # A股交易时段K线聚合
 │   └── double_ma/
 │       ├── base.py                # 实时和回测共用交叉规则
 │       ├── strategy.py            # 仅通知 CTA 策略
@@ -42,12 +48,15 @@ flowchart LR
     Catalog --> Source["DataSourcePlugin"]
     Catalog --> Strategy["StrategyPlugin"]
     Source --> Gateway["VeighNa Gateway"]
+    Source --> History["HistoricalBarService"]
     Gateway --> Engine["EventEngine / CtaEngine"]
+    History --> Engine
+    History --> Research["CtaBacktester GUI"]
     Strategy --> Cta["CtaTemplate 实现"]
     Engine --> Cta
     Cta --> Signal["SignalEvent"]
     Signal --> Notify["持久化通知队列"]
-    Strategy --> Research["CtaBacktester GUI"]
+    Strategy --> Research
 ```
 
 ## 配置选择
@@ -64,8 +73,9 @@ minimum_history_bars = 100
 
 [strategy]
 name = "double_ma_signal"
+bar_window_minutes = 15
 fast_window = 10
-slow_window = 20
+slow_window = 60
 ```
 
 `name` 由核心配置解析，其余字段保留为组件参数。所选插件负责拒绝未知字段、检查类型和验证参数
@@ -81,6 +91,7 @@ slow_window = 20
 - 验证 `[data_source]` 参数
 - 生成 Gateway 连接参数
 - 为 `doctor` 提供统一的行情与历史诊断结果
+- 可选创建 `HistoricalBarService`，为非 VeighNa 原生周期提供实时预热和回测数据
 
 当前内置实现是 `TencentDataSourcePlugin`。`TencentGateway` 仍在基础设施层拒绝所有委托，因此更换
 策略不会绕过只读边界。
@@ -117,8 +128,9 @@ application = TradePilotApp(config, custom_catalog)
 
 1. 实现一个只读或正式券商 `BaseGateway`。
 2. 继承 `DataSourcePlugin`，实现参数验证、连接设置和诊断。
-3. 通过 Python entry point 注册。
-4. 在配置中切换 `data_source.name`。
+3. 需要 `15m` 等非原生周期时，实现 `HistoricalBarService` 并由插件创建。
+4. 通过 Python entry point 注册。
+5. 在配置中切换 `data_source.name`。
 
 外部扩展包的 `pyproject.toml` 示例：
 
@@ -138,6 +150,10 @@ from tradepilot.core.components import DataSourcePlugin, SymbolDiagnostic
 
 腾讯 POC 永远不得用于自动交易。未来接入券商时，应另建数据源插件，不能在
 `TencentGateway.send_order()` 中加入委托实现。
+
+VeighNa 4.4 的 `Interval` 没有 `15m`。TradePilot 因此把非原生周期保存在项目自己的
+`HistoricalBarStore`，唯一键显式包含周期；回测适配器加载后仍复用官方模拟撮合和统计。禁止把
+原生 15 分钟K线伪装成普通 `Interval.MINUTE` 写入 VeighNa 标准数据库。
 
 ## 新增策略
 

@@ -9,8 +9,9 @@ minimum_history_bars = 100
 
 [strategy]
 name = "double_ma_signal"
+bar_window_minutes = 15
 fast_window = 10
-slow_window = 20
+slow_window = 60
 
 [execution]
 # Runtime monitor mode. paper/live are reserved and deliberately rejected for now.

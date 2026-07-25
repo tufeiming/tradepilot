@@ -41,7 +41,7 @@ def make_config(
         ),
         strategy=ComponentConfig(
             name=strategy,
-            settings={"fast_window": 10, "slow_window": 20}
+            settings={"fast_window": 10, "slow_window": 60, "bar_window_minutes": 15}
             if strategy == "double_ma_signal"
             else {},
         ),
@@ -66,15 +66,17 @@ def test_default_catalog_builds_selected_component_settings():
     assert strategy.instance_name("515080.SSE") == "tradepilot_515080_sse"
     assert strategy.engine_settings(config, data_source) == {
         "fast_window": 10,
-        "slow_window": 20,
+        "slow_window": 60,
         "history_size": 100,
+        "bar_window_minutes": 15,
         "data_source": "Tencent POC",
     }
     research_class = strategy.get_backtest_strategy_class(config)
     assert research_class is not None
     assert research_class.fast_window == 10
-    assert research_class.slow_window == 20
+    assert research_class.slow_window == 60
     assert research_class.history_size == 100
+    assert research_class.bar_window_minutes == 15
 
 
 def test_catalog_rejects_unknown_selected_component():

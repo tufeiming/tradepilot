@@ -11,13 +11,17 @@ from zoneinfo import ZoneInfo
 
 from vnpy.event import Event, EventEngine
 from vnpy.trader.engine import MainEngine
-from vnpy_ctastrategy import CtaEngine, CtaStrategyApp
+from vnpy_ctastrategy import CtaEngine
 
 from tradepilot.bootstrap import build_default_catalog
 from tradepilot.core.components import ComponentCatalog
 from tradepilot.core.config import AppConfig, ConfigError, ExecutionMode
 from tradepilot.core.events import EVENT_TRADEPILOT_FEED, FeedStatus, FeedStatusEvent
 from tradepilot.notifications.feishu import FeishuClient, NotificationService, NotificationStore
+from tradepilot.runtime.cta import (
+    TradePilotCtaStrategyApp,
+    configure_live_history_service,
+)
 
 LOGGER = logging.getLogger(__name__)
 MARKET_TZ = ZoneInfo("Asia/Shanghai")
@@ -41,12 +45,14 @@ class TradePilotApp:
         self.catalog.validate(config)
         self.data_source = self.catalog.data_sources.get(config.data_source.name)
         self.strategy_plugin = self.catalog.strategies.get(config.strategy.name)
+        history_service = self.data_source.create_history_service(config, config.runtime_dir)
+        configure_live_history_service(history_service)
         self.stop_event = threading.Event()
         self.event_engine = EventEngine()
         self.main_engine = MainEngine(self.event_engine)
         try:
             self.main_engine.add_gateway(self.data_source.gateway_class)
-            self.cta_engine: CtaEngine = self.main_engine.add_app(CtaStrategyApp)
+            self.cta_engine: CtaEngine = self.main_engine.add_app(TradePilotCtaStrategyApp)
         except Exception:
             self.main_engine.close()
             raise
@@ -91,7 +97,7 @@ class TradePilotApp:
             if not history_ready:
                 self.notifier.enqueue(
                     f"strategy-not-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
-                    f"[策略未就绪] {strategy_name}\n历史分钟线 {count}/"
+                    f"[策略未就绪] {strategy_name}\n策略周期历史K线 {count}/"
                     f"{self.config.monitor.minimum_history_bars}，本次不启动",
                 )
                 continue

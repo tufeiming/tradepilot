@@ -1,4 +1,4 @@
-"""Shared one-minute double-MA signal lifecycle for live and research strategies."""
+"""Shared timeframe-aware double-MA lifecycle for live and research strategies."""
 
 from __future__ import annotations
 
@@ -10,14 +10,16 @@ from vnpy_ctastrategy import ArrayManager, BarData, BarGenerator, CtaTemplate, T
 from vnpy_ctastrategy.base import EngineType
 
 from tradepilot.core.events import SignalDirection
+from tradepilot.strategies.bars import AShareMinuteWindowAggregator
 
 
 class DoubleMaStrategyBase(CtaTemplate):
     """Calculate strict MA crosses without deciding how a signal is executed."""
 
     fast_window: int = 10
-    slow_window: int = 20
+    slow_window: int = 60
     history_size: int = 100
+    bar_window_minutes: int = 15
 
     fast_ma0: float = 0.0
     fast_ma1: float = 0.0
@@ -26,7 +28,7 @@ class DoubleMaStrategyBase(CtaTemplate):
     history_count: int = 0
     history_ready: bool = False
 
-    parameters = ["fast_window", "slow_window", "history_size"]
+    parameters = ["fast_window", "slow_window", "history_size", "bar_window_minutes"]
     variables = [
         "fast_ma0",
         "fast_ma1",
@@ -39,10 +41,28 @@ class DoubleMaStrategyBase(CtaTemplate):
     def on_init(self) -> None:
         self.write_log("双均线策略初始化")
         self.bg = BarGenerator(self.on_bar)
+        self.window_aggregator = AShareMinuteWindowAggregator(
+            self.bar_window_minutes,
+            self.on_signal_bar,
+        )
         self.am = ArrayManager(size=self.history_size)
-        history_interval = self._history_interval()
-        history_days = self.history_size * 2 if history_interval is Interval.DAILY else 10
-        self.load_bar(history_days, interval=history_interval)
+        if self.get_engine_type() is EngineType.BACKTESTING:
+            history_interval = self._history_interval()
+            history_days = self.history_size * 2 if history_interval is Interval.DAILY else 100
+            self.load_bar(
+                history_days,
+                interval=history_interval,
+                callback=self.on_signal_bar,
+            )
+        elif self.bar_window_minutes == 1:
+            self.load_bar(10, interval=Interval.MINUTE, callback=self.on_signal_bar)
+        else:
+            loader = getattr(self.cta_engine, "load_timeframe_bars", None)
+            if not callable(loader):
+                raise RuntimeError("CTA engine does not support project timeframe history")
+            timeframe = f"{self.bar_window_minutes}m"
+            for bar in loader(self.vt_symbol, timeframe, self.history_size):
+                self.on_signal_bar(bar)
         self.history_ready = self.am.inited
 
     def on_stop(self) -> None:
@@ -53,6 +73,13 @@ class DoubleMaStrategyBase(CtaTemplate):
         self.bg.update_tick(tick)
 
     def on_bar(self, bar: BarData) -> None:
+        if self.get_engine_type() is EngineType.BACKTESTING or self.bar_window_minutes == 1:
+            self.on_signal_bar(bar)
+        else:
+            self.window_aggregator.update_bar(bar)
+
+    def on_signal_bar(self, bar: BarData) -> None:
+        """Update indicators from one completed strategy-timeframe bar."""
         am = self.am
         am.update_bar(bar)
         self.history_count = min(am.count, self.history_size)
