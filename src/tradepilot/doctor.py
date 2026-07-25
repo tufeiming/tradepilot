@@ -62,11 +62,11 @@ def run_doctor(
 
         if diagnostic.history_error:
             failures.append(f"history failed for {vt_symbol}: {diagnostic.history_error}")
-            print(f"[FAIL] {vt_symbol}: 分钟历史加载失败：{diagnostic.history_error}")
+            print(f"[FAIL] {vt_symbol}: 策略周期历史加载失败：{diagnostic.history_error}")
         else:
             history_bars = diagnostic.history_bars or 0
             enough = history_bars >= config.monitor.minimum_history_bars
-            print(f"[{'OK' if enough else 'FAIL'}] {vt_symbol}: {history_bars} 根已完成分钟线")
+            print(f"[{'OK' if enough else 'FAIL'}] {vt_symbol}: {history_bars} 根已完成策略周期K线")
             if not enough:
                 failures.append(f"insufficient history for {vt_symbol}")
 

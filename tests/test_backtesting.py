@@ -18,6 +18,7 @@ from tradepilot.data_sources.tencent.client import SHANGHAI_TZ
 from tradepilot.data_sources.tencent.gateway import TencentGateway
 from tradepilot.research.backtester import (
     TradePilotBacktesterEngine,
+    TradePilotBacktestingEngine,
     configure_backtest_strategies,
 )
 from tradepilot.research.gui import ResearchTradingDisabledError, make_read_only_gateway
@@ -109,6 +110,68 @@ def test_t_plus_one_can_be_disabled_for_research_comparison():
 
     assert len(trades) == 2
     assert trades[1].datetime.date() == datetime(2026, 7, 22).date()
+
+
+def test_project_15m_engine_loads_explicit_history_and_runs_official_simulation():
+    warmup_start = datetime(2026, 7, 21, 13, 45, tzinfo=SHANGHAI_TZ)
+    warmup = [
+        make_bar(warmup_start + timedelta(minutes=15 * index), close)
+        for index, close in enumerate([7, 6, 5, 4, 3])
+    ]
+    replay_values = [
+        (datetime(2026, 7, 22, 9, 30, tzinfo=SHANGHAI_TZ), 4),
+        (datetime(2026, 7, 22, 9, 45, tzinfo=SHANGHAI_TZ), 6),
+        (datetime(2026, 7, 22, 10, 0, tzinfo=SHANGHAI_TZ), 6),
+        (datetime(2026, 7, 22, 10, 15, tzinfo=SHANGHAI_TZ), 4),
+        (datetime(2026, 7, 23, 9, 30, tzinfo=SHANGHAI_TZ), 4),
+        (datetime(2026, 7, 23, 9, 45, tzinfo=SHANGHAI_TZ), 4),
+    ]
+    replay = [make_bar(timestamp, close) for timestamp, close in replay_values]
+
+    class MemoryHistoryService:
+        supported_timeframes = ("15m",)
+
+        def __init__(self):
+            self.requests = []
+
+        def load(self, vt_symbol, timeframe, start, end):
+            self.requests.append((vt_symbol, timeframe, start, end))
+            return warmup if end < replay[0].datetime else replay
+
+    service = MemoryHistoryService()
+    engine = TradePilotBacktestingEngine(service)
+    engine.set_parameters(
+        vt_symbol="515080.SSE",
+        interval="15m",
+        start=replay[0].datetime,
+        end=replay[-1].datetime,
+        rate=0,
+        slippage=0,
+        size=100,
+        pricetick=0.001,
+        capital=100_000,
+    )
+    engine.add_strategy(
+        DoubleMaLongBacktestStrategy,
+        {
+            "fast_window": 2,
+            "slow_window": 3,
+            "history_size": 5,
+            "bar_window_minutes": 15,
+            "fixed_size": 1,
+            "t_plus_one": True,
+        },
+    )
+
+    engine.load_data()
+    engine.run_backtesting()
+
+    assert len(engine.history_data) == 6
+    assert {request[1] for request in service.requests} == {"15m"}
+    assert [(trade.direction, trade.offset) for trade in engine.get_all_trades()] == [
+        (Direction.LONG, Offset.OPEN),
+        (Direction.SHORT, Offset.CLOSE),
+    ]
 
 
 def test_backtest_warmup_uses_selected_daily_interval():

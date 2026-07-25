@@ -15,13 +15,14 @@ from tradepilot.strategies.double_ma.strategy import DoubleMaSignalStrategy
 class DoubleMaSettings:
     fast_window: int
     slow_window: int
+    bar_window_minutes: int
 
 
 class DoubleMaSignalStrategyPlugin(StrategyPlugin):
-    """Built-in one-minute MA crossover notification strategy."""
+    """Built-in configurable-timeframe MA crossover notification strategy."""
 
     name = "double_ma_signal"
-    display_name = "一分钟双均线信号"
+    display_name = "15分钟双均线信号"
     strategy_class = DoubleMaSignalStrategy
     backtest_strategy_class = DoubleMaLongBacktestStrategy
 
@@ -47,12 +48,15 @@ class DoubleMaSignalStrategyPlugin(StrategyPlugin):
             "fast_window": settings.fast_window,
             "slow_window": settings.slow_window,
             "history_size": config.monitor.minimum_history_bars,
+            "bar_window_minutes": settings.bar_window_minutes,
             "data_source": data_source.display_name,
         }
 
     def configuration_summary(self, config: AppConfig) -> str:
         settings = self._settings(config)
-        return f"MA{settings.fast_window}/MA{settings.slow_window}，1分钟"
+        return (
+            f"MA{settings.fast_window}/MA{settings.slow_window}，{settings.bar_window_minutes}分钟"
+        )
 
     def get_backtest_strategy_class(self, config: AppConfig) -> type[DoubleMaLongBacktestStrategy]:
         settings = self._settings(config)
@@ -60,16 +64,27 @@ class DoubleMaSignalStrategyPlugin(StrategyPlugin):
         strategy_class.fast_window = settings.fast_window
         strategy_class.slow_window = settings.slow_window
         strategy_class.history_size = config.monitor.minimum_history_bars
+        strategy_class.bar_window_minutes = settings.bar_window_minutes
         return strategy_class
 
     def _settings(self, config: AppConfig) -> DoubleMaSettings:
         values = config.strategy.settings
-        _reject_unknown(values, {"fast_window", "slow_window"}, "strategy")
+        _reject_unknown(
+            values,
+            {"fast_window", "slow_window", "bar_window_minutes"},
+            "strategy",
+        )
         fast_window = _integer(values.get("fast_window", 10), "strategy.fast_window")
-        slow_window = _integer(values.get("slow_window", 20), "strategy.slow_window")
+        slow_window = _integer(values.get("slow_window", 60), "strategy.slow_window")
+        bar_window_minutes = _integer(
+            values.get("bar_window_minutes", 15),
+            "strategy.bar_window_minutes",
+        )
         if fast_window < 2 or fast_window >= slow_window:
             raise ConfigError("strategy windows must satisfy 2 <= fast_window < slow_window")
-        return DoubleMaSettings(fast_window, slow_window)
+        if bar_window_minutes != 15:
+            raise ConfigError("strategy.bar_window_minutes currently must be 15")
+        return DoubleMaSettings(fast_window, slow_window, bar_window_minutes)
 
 
 def _reject_unknown(

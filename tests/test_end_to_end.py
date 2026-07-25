@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from vnpy.event import EventEngine
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData
+from vnpy_ctastrategy.base import EngineType
 
 from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, parse_quote_response
 from tradepilot.notifications.feishu import FeishuClient, NotificationService, NotificationStore
@@ -26,6 +27,13 @@ class FakeCtaEngine:
     def load_bar(self, vt_symbol, days, interval, callback, use_database):
         return self.history
 
+    def load_timeframe_bars(self, vt_symbol, timeframe, count):
+        assert timeframe == "15m"
+        return self.history[-count:]
+
+    def get_engine_type(self):
+        return EngineType.LIVE
+
     def write_log(self, msg, strategy=None):
         return
 
@@ -33,7 +41,7 @@ class FakeCtaEngine:
         return
 
 
-def tencent_quote(price: float, minute: int, volume: int) -> bytes:
+def tencent_quote(price: float, moment: datetime, volume: int) -> bytes:
     fields = [""] * 38
     fields[1] = "中证红利ETF招商"
     fields[2] = "515080"
@@ -41,7 +49,7 @@ def tencent_quote(price: float, minute: int, volume: int) -> bytes:
     fields[4] = "3"
     fields[5] = str(price)
     fields[6] = str(volume)
-    fields[30] = f"2026072310{minute:02d}05"
+    fields[30] = moment.strftime("%Y%m%d%H%M%S")
     fields[33] = str(price)
     fields[34] = str(price)
     fields[35] = f"{price}/{volume}/{price * volume}"
@@ -53,7 +61,7 @@ def historical_bar(index: int, close: float) -> BarData:
         gateway_name="TENCENT",
         symbol="515080",
         exchange=Exchange.SSE,
-        datetime=datetime(2026, 7, 22, 14, 0, tzinfo=SHANGHAI_TZ) + timedelta(minutes=index),
+        datetime=datetime(2026, 7, 22, 14, 0, tzinfo=SHANGHAI_TZ) + timedelta(minutes=15 * index),
         interval=Interval.MINUTE,
         open_price=close,
         high_price=close,
@@ -89,6 +97,7 @@ def test_fake_tencent_tick_to_ma_cross_to_feishu(tmp_path):
             "fast_window": 2,
             "slow_window": 3,
             "history_size": 5,
+            "bar_window_minutes": 15,
             "data_source": "Tencent POC",
         },
     )
@@ -96,8 +105,12 @@ def test_fake_tencent_tick_to_ma_cross_to_feishu(tmp_path):
     try:
         strategy.on_init()
         strategy.trading = True
-        for minute, price in [(0, 4), (1, 6), (2, 6), (3, 4), (4, 2)]:
-            quote = parse_quote_response(tencent_quote(price, minute, (minute + 1) * 100))[0]
+        start = datetime(2026, 7, 23, 9, 30, 5, tzinfo=SHANGHAI_TZ)
+        window_prices = [4, 6, 6, 4]
+        for minute in range(61):
+            price = window_prices[min(minute // 15, 3)]
+            moment = start + timedelta(minutes=minute)
+            quote = parse_quote_response(tencent_quote(price, moment, (minute + 1) * 100))[0]
             strategy.on_tick(
                 TickData(
                     gateway_name="TENCENT",

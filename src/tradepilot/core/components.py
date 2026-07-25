@@ -5,11 +5,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from vnpy.trader.gateway import BaseGateway
 from vnpy_ctastrategy import CtaTemplate
 
 from tradepilot.core.config import AppConfig, ConfigError
+from tradepilot.core.history import HistoricalBarService
 
 MANAGED_STRATEGY_PREFIX = "tradepilot_"
 
@@ -45,6 +47,14 @@ class DataSourcePlugin(ABC):
     @abstractmethod
     def diagnose(self, config: AppConfig, now: datetime) -> list[SymbolDiagnostic]:
         """Perform read-only quote and history checks for doctor."""
+
+    def create_history_service(
+        self,
+        config: AppConfig,
+        runtime_dir: Path,
+    ) -> HistoricalBarService | None:
+        """Create optional non-standard timeframe support for research and warm-up."""
+        return None
 
 
 class StrategyPlugin(ABC):

@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from tradepilot.core.components import DataSourcePlugin, SymbolDiagnostic
 from tradepilot.core.config import AppConfig, ConfigError
+from tradepilot.core.history import HistoricalBarService
 from tradepilot.data_sources.tencent.client import TencentClient, is_trading_session
 from tradepilot.data_sources.tencent.gateway import TencentGateway
+from tradepilot.data_sources.tencent.history import TencentHistoricalBarService
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +50,7 @@ class TencentDataSourcePlugin(DataSourcePlugin):
             quote_error = str(exc)
 
         results: list[SymbolDiagnostic] = []
+        bar_window_minutes = config.strategy.settings.get("bar_window_minutes", 1)
         for vt_symbol in config.monitor.symbols:
             quote = quotes.get(vt_symbol)
             current_quote_error = quote_error
@@ -66,7 +70,10 @@ class TencentDataSourcePlugin(DataSourcePlugin):
             history_bars = None
             history_error = None
             try:
-                history_bars = len(client.fetch_history(vt_symbol, now=now))
+                if bar_window_minutes == 15:
+                    history_bars = len(client.fetch_15m_history(vt_symbol, now=now))
+                else:
+                    history_bars = len(client.fetch_history(vt_symbol, now=now))
             except Exception as exc:
                 history_error = str(exc)
 
@@ -82,6 +89,13 @@ class TencentDataSourcePlugin(DataSourcePlugin):
                 )
             )
         return results
+
+    def create_history_service(
+        self,
+        config: AppConfig,
+        runtime_dir: Path,
+    ) -> HistoricalBarService:
+        return TencentHistoricalBarService(runtime_dir)
 
     def _settings(self, config: AppConfig) -> TencentSettings:
         values = config.data_source.settings

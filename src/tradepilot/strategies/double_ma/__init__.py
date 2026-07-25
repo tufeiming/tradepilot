@@ -1,1 +1,1 @@
-"""One-minute double moving-average baseline strategy."""
+"""Timeframe-aware double moving-average baseline strategy."""

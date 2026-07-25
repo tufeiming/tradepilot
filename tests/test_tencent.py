@@ -1,19 +1,29 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
+import tradepilot.data_sources.tencent.client as tencent_client
 from tradepilot.data_sources.tencent.client import (
     SHANGHAI_TZ,
     TencentClient,
     TencentDataError,
     from_tencent_symbol,
     is_trading_session,
+    parse_15m_history_response,
     parse_daily_history_response,
     parse_history_response,
     parse_quote_response,
     to_tencent_symbol,
 )
+
+
+def m15_payload(rows):
+    return {"code": 0, "data": {"sh515080": {"m15": rows}}}
+
+
+def m15_row(timestamp, close="1.1"):
+    return [timestamp, "1.0", close, "1.2", "0.9", "10", {}, "20"]
 
 
 def quote_line(*, price="1.555", timestamp="20260723101447") -> str:
@@ -40,6 +50,78 @@ def test_symbol_mapping():
     assert to_tencent_symbol("515080.SSE") == "sh515080"
     assert to_tencent_symbol("159915.SZSE") == "sz159915"
     assert from_tencent_symbol("sh600519") == ("600519", "SSE")
+
+
+def test_parse_15m_normalizes_bar_end_and_deduplicates():
+    bars = parse_15m_history_response(
+        m15_payload(
+            [
+                m15_row("202607240945", "1.05"),
+                m15_row("202607241000", "1.10"),
+                m15_row("202607241000", "1.11"),
+                m15_row("202607241015", "1.12"),
+            ]
+        ),
+        "515080.SSE",
+        now=datetime(2026, 7, 24, 10, 7, tzinfo=SHANGHAI_TZ),
+    )
+
+    assert [bar.timestamp.strftime("%H:%M") for bar in bars] == ["09:30", "09:45"]
+    assert bars[-1].close_price == pytest.approx(1.11)
+
+
+def test_parse_15m_has_16_aligned_bars_per_normal_trading_day():
+    morning = [datetime(2026, 7, 24, 9, 45) + timedelta(minutes=15 * index) for index in range(8)]
+    afternoon = [
+        datetime(2026, 7, 24, 13, 15) + timedelta(minutes=15 * index) for index in range(8)
+    ]
+    rows = [m15_row(value.strftime("%Y%m%d%H%M")) for value in [*morning, *afternoon]]
+
+    bars = parse_15m_history_response(
+        m15_payload(rows),
+        "515080.SSE",
+        now=datetime(2026, 7, 24, 15, 1, tzinfo=SHANGHAI_TZ),
+    )
+
+    assert len(bars) == 16
+    assert bars[0].timestamp.strftime("%H:%M") == "09:30"
+    assert bars[7].timestamp.strftime("%H:%M") == "11:15"
+    assert bars[8].timestamp.strftime("%H:%M") == "13:00"
+    assert bars[-1].timestamp.strftime("%H:%M") == "14:45"
+
+
+def test_15m_history_pages_backwards(monkeypatch):
+    requested_params = []
+    monkeypatch.setattr(tencent_client, "INTRADAY_HISTORY_PAGE_SIZE", 2)
+
+    class Response:
+        def __init__(self, rows):
+            self.content = json.dumps(m15_payload(rows)).encode()
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, *, params, headers, timeout):
+        requested_params.append(params["param"])
+        if len(requested_params) == 1:
+            return Response([m15_row("202607241445"), m15_row("202607241500")])
+        return Response([m15_row("202607241415"), m15_row("202607241430")])
+
+    bars = TencentClient(get=fake_get, retries=1).fetch_15m_history(
+        "515080.SSE",
+        now=datetime(2026, 7, 24, 16, 0, tzinfo=SHANGHAI_TZ),
+        start=datetime(2026, 7, 24, 14, 0),
+        end=datetime(2026, 7, 24, 15, 0),
+    )
+
+    assert [bar.timestamp.strftime("%H:%M") for bar in bars] == [
+        "14:00",
+        "14:15",
+        "14:30",
+        "14:45",
+    ]
+    assert len(requested_params) == 2
+    assert "202607241444" in requested_params[1]
 
 
 def test_parse_gb18030_quote():

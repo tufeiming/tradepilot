@@ -21,6 +21,8 @@ QUOTE_URL = "https://qt.gtimg.cn/q="
 HISTORY_URL = "https://web.ifzq.gtimg.cn/appstock/app/day/query"
 DAILY_HISTORY_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 DAILY_HISTORY_PAGE_SIZE = 640
+INTRADAY_HISTORY_URL = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
+INTRADAY_HISTORY_PAGE_SIZE = 320
 USER_AGENT = "Mozilla/5.0 (TradePilot/0.1; Tencent POC feed)"
 QUOTE_PATTERN = re.compile(r'v_(?P<symbol>(?:sh|sz)\d{6})="(?P<data>.*)";?')
 
@@ -89,6 +91,21 @@ class MinuteSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class DailySnapshot:
+    symbol: str
+    exchange: str
+    timestamp: datetime
+    open_price: float
+    high_price: float
+    low_price: float
+    close_price: float
+    volume: float
+    turnover: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class FifteenMinuteSnapshot:
+    """A completed native Tencent 15-minute bar, timestamped at bar start."""
+
     symbol: str
     exchange: str
     timestamp: datetime
@@ -301,8 +318,75 @@ def parse_daily_history_response(
     return snapshots
 
 
+def parse_15m_history_response(
+    raw: bytes | str | dict[str, Any],
+    vt_symbol: str,
+    *,
+    now: datetime,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[FifteenMinuteSnapshot]:
+    """Parse Tencent m15 bars and normalize end timestamps to bar starts."""
+    payload = _load_json(raw)
+    tx_symbol = to_tencent_symbol(vt_symbol)
+    symbol, exchange = parse_vt_symbol(vt_symbol)
+    rows = payload.get("data", {}).get(tx_symbol, {}).get("m15", [])
+    if not isinstance(rows, list):
+        raise TencentDataError("Tencent 15m history has an invalid data node")
+
+    now_local = _as_shanghai(now)
+    start_local = _as_shanghai(start) if start else None
+    end_local = _as_shanghai(end) if end else None
+    result: dict[datetime, FifteenMinuteSnapshot] = {}
+
+    for row in rows:
+        if not isinstance(row, list | tuple) or len(row) < 6:
+            continue
+        try:
+            bar_end = datetime.strptime(str(row[0]), "%Y%m%d%H%M").replace(tzinfo=SHANGHAI_TZ)
+            open_price = _float(row[1])
+            close_price = _float(row[2])
+            high_price = _float(row[3])
+            low_price = _float(row[4])
+            volume = _float(row[5])
+            turnover = _float(row[7]) if len(row) > 7 else 0.0
+        except (TencentDataError, ValueError):
+            continue
+
+        if not _is_15m_bar_end(bar_end) or bar_end > now_local:
+            continue
+        bar_start = bar_end - timedelta(minutes=15)
+        if start_local and bar_start < start_local:
+            continue
+        if end_local and bar_start > end_local:
+            continue
+        if min(open_price, high_price, low_price, close_price) <= 0 or volume < 0:
+            continue
+        if high_price < max(open_price, low_price, close_price):
+            continue
+        if low_price > min(open_price, high_price, close_price):
+            continue
+
+        result[bar_start] = FifteenMinuteSnapshot(
+            symbol=symbol,
+            exchange=exchange,
+            timestamp=bar_start,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=close_price,
+            volume=volume,
+            turnover=turnover,
+        )
+
+    snapshots = [result[key] for key in sorted(result)]
+    if not snapshots:
+        raise TencentDataError(f"Tencent returned no completed 15m data for {vt_symbol}")
+    return snapshots
+
+
 class TencentClient:
-    """Retrying client for quotes, five-day minute bars, and paged daily bars."""
+    """Retrying client for quotes and Tencent's supported history endpoints."""
 
     def __init__(
         self,
@@ -402,6 +486,63 @@ class TencentClient:
 
         return [result[key] for key in sorted(result)]
 
+    def fetch_15m_history(
+        self,
+        vt_symbol: str,
+        *,
+        now: datetime,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[FifteenMinuteSnapshot]:
+        """Fetch Tencent's rolling native 15-minute history backwards by page."""
+        now_local = _as_shanghai(now)
+        start_local = _as_shanghai(start) if start else now_local - timedelta(days=210)
+        end_local = min(_as_shanghai(end) if end else now_local, now_local)
+        if start_local > end_local:
+            return []
+
+        tx_symbol = to_tencent_symbol(vt_symbol)
+        cursor = end_local
+        result: dict[datetime, FifteenMinuteSnapshot] = {}
+
+        for _ in range(20):
+            response = self._request(
+                INTRADAY_HISTORY_URL,
+                params={
+                    "param": (f"{tx_symbol},m15,{cursor:%Y%m%d%H%M},{INTRADAY_HISTORY_PAGE_SIZE}")
+                },
+            )
+            try:
+                page = parse_15m_history_response(
+                    response.content,
+                    vt_symbol,
+                    now=now_local,
+                )
+            except TencentDataError as exc:
+                no_data = str(exc) == f"Tencent returned no completed 15m data for {vt_symbol}"
+                if result and no_data:
+                    break
+                raise
+
+            for snapshot in page:
+                if start_local <= snapshot.timestamp <= end_local:
+                    result[snapshot.timestamp] = snapshot
+
+            earliest = page[0].timestamp
+            if earliest <= start_local or len(page) < INTRADAY_HISTORY_PAGE_SIZE:
+                break
+            next_cursor = earliest + timedelta(minutes=14)
+            if next_cursor >= cursor:
+                raise TencentDataError("Tencent 15m history pagination did not advance")
+            cursor = next_cursor
+        else:
+            raise TencentDataError("Tencent 15m history exceeded pagination limit")
+
+        snapshots = [result[key] for key in sorted(result)]
+        if not snapshots:
+            raise TencentDataError(f"Tencent returned no completed 15m data for {vt_symbol}")
+        return snapshots
+
     def _request(
         self,
         url: str,
@@ -438,6 +579,15 @@ def _load_json(raw: bytes | str | dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise TencentDataError("Tencent returned a non-object JSON value")
     return value
+
+
+def _is_15m_bar_end(moment: datetime) -> bool:
+    if moment.weekday() >= 5:
+        return False
+    value = moment.time().replace(tzinfo=None)
+    morning = daytime(9, 45) <= value <= daytime(11, 30)
+    afternoon = daytime(13, 15) <= value <= daytime(15, 0)
+    return (morning or afternoon) and value.minute % 15 == 0
 
 
 def _parse_quote_timestamp(value: str) -> datetime:
