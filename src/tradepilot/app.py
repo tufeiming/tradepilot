@@ -15,7 +15,7 @@ from vnpy_ctastrategy import CtaEngine, CtaStrategyApp
 
 from tradepilot.bootstrap import build_default_catalog
 from tradepilot.core.components import ComponentCatalog
-from tradepilot.core.config import AppConfig
+from tradepilot.core.config import AppConfig, ConfigError, ExecutionMode
 from tradepilot.core.events import EVENT_TRADEPILOT_FEED, FeedStatus, FeedStatusEvent
 from tradepilot.notifications.feishu import FeishuClient, NotificationService, NotificationStore
 
@@ -32,6 +32,11 @@ class TradePilotApp:
         catalog: ComponentCatalog | None = None,
     ) -> None:
         self.config = config
+        if config.execution.mode is not ExecutionMode.NOTIFY:
+            raise ConfigError(
+                "monitor currently supports only execution.mode='notify'; "
+                "use the backtest command for simulated trading"
+            )
         self.catalog = catalog or build_default_catalog()
         self.catalog.validate(config)
         self.data_source = self.catalog.data_sources.get(config.data_source.name)
@@ -97,7 +102,7 @@ class TradePilotApp:
                 f"strategy-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
                 f"[策略就绪] {strategy_name}\n"
                 f"{self.strategy_plugin.configuration_summary(self.config)}\n"
-                "运行模式：仅通知，委托已禁用",
+                "运行模式：notify（仅通知，委托已禁用）",
             )
 
         self._started = True

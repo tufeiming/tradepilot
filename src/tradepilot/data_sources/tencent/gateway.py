@@ -131,37 +131,61 @@ class TencentGateway(BaseGateway):
         return
 
     def query_history(self, req: HistoryRequest) -> list[BarData]:
-        if req.interval is not Interval.MINUTE:
-            self.write_log(f"腾讯POC历史仅支持1分钟周期：{req.vt_symbol}")
-            return []
+        now = datetime.now(SHANGHAI_TZ)
         try:
-            snapshots = self.client.fetch_history(
-                req.vt_symbol,
-                now=datetime.now(SHANGHAI_TZ),
-                start=req.start,
-                end=req.end,
-            )
+            if req.interval is Interval.MINUTE:
+                snapshots = self.client.fetch_history(
+                    req.vt_symbol,
+                    now=now,
+                    start=req.start,
+                    end=req.end,
+                )
+                return [
+                    BarData(
+                        gateway_name=self.gateway_name,
+                        symbol=item.symbol,
+                        exchange=req.exchange,
+                        datetime=item.timestamp,
+                        interval=Interval.MINUTE,
+                        volume=item.volume,
+                        turnover=item.turnover,
+                        open_price=item.close_price,
+                        high_price=item.close_price,
+                        low_price=item.close_price,
+                        close_price=item.close_price,
+                    )
+                    for item in snapshots
+                ]
+
+            if req.interval is Interval.DAILY:
+                daily_snapshots = self.client.fetch_daily_history(
+                    req.vt_symbol,
+                    now=now,
+                    start=req.start,
+                    end=req.end,
+                )
+                return [
+                    BarData(
+                        gateway_name=self.gateway_name,
+                        symbol=item.symbol,
+                        exchange=req.exchange,
+                        datetime=item.timestamp,
+                        interval=Interval.DAILY,
+                        volume=item.volume,
+                        turnover=item.turnover,
+                        open_price=item.open_price,
+                        high_price=item.high_price,
+                        low_price=item.low_price,
+                        close_price=item.close_price,
+                    )
+                    for item in daily_snapshots
+                ]
         except TencentError as exc:
-            self.write_log(f"加载分钟历史失败 {req.vt_symbol}：{exc}")
+            self.write_log(f"加载腾讯{req.interval.value}历史失败 {req.vt_symbol}：{exc}")
             return []
 
-        exchange = Exchange[req.exchange.name]
-        return [
-            BarData(
-                gateway_name=self.gateway_name,
-                symbol=item.symbol,
-                exchange=exchange,
-                datetime=item.timestamp,
-                interval=Interval.MINUTE,
-                volume=item.volume,
-                turnover=item.turnover,
-                open_price=item.close_price,
-                high_price=item.close_price,
-                low_price=item.close_price,
-                close_price=item.close_price,
-            )
-            for item in snapshots
-        ]
+        self.write_log(f"腾讯POC历史仅支持1分钟和日线周期：{req.vt_symbol}")
+        return []
 
     def _run(self) -> None:
         while not self._stop.is_set():

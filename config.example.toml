@@ -12,6 +12,10 @@ name = "double_ma_signal"
 fast_window = 10
 slow_window = 20
 
+[execution]
+# Runtime monitor mode. paper/live are reserved and deliberately rejected for now.
+mode = "notify"
+
 [feishu]
 enabled = true
 # webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/..."

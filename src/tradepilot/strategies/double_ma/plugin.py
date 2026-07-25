@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from tradepilot.core.components import DataSourcePlugin, StrategyPlugin
 from tradepilot.core.config import AppConfig, ConfigError
+from tradepilot.strategies.double_ma.backtest import DoubleMaLongBacktestStrategy
 from tradepilot.strategies.double_ma.strategy import DoubleMaSignalStrategy
 
 
@@ -22,6 +23,7 @@ class DoubleMaSignalStrategyPlugin(StrategyPlugin):
     name = "double_ma_signal"
     display_name = "一分钟双均线信号"
     strategy_class = DoubleMaSignalStrategy
+    backtest_strategy_class = DoubleMaLongBacktestStrategy
 
     def validate(self, config: AppConfig) -> None:
         settings = self._settings(config)
@@ -51,6 +53,14 @@ class DoubleMaSignalStrategyPlugin(StrategyPlugin):
     def configuration_summary(self, config: AppConfig) -> str:
         settings = self._settings(config)
         return f"MA{settings.fast_window}/MA{settings.slow_window}，1分钟"
+
+    def get_backtest_strategy_class(self, config: AppConfig) -> type[DoubleMaLongBacktestStrategy]:
+        settings = self._settings(config)
+        strategy_class = DoubleMaLongBacktestStrategy
+        strategy_class.fast_window = settings.fast_window
+        strategy_class.slow_window = settings.slow_window
+        strategy_class.history_size = config.monitor.minimum_history_bars
+        return strategy_class
 
     def _settings(self, config: AppConfig) -> DoubleMaSettings:
         values = config.strategy.settings

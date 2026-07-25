@@ -23,6 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     monitor = subparsers.add_parser("monitor", help="启动无界面实时盯盘")
     monitor.add_argument("--config", type=Path, default=Path("config.toml"))
+
+    backtest = subparsers.add_parser("backtest", help="启动 VeighNa 图形化回测研究")
+    backtest.add_argument("--config", type=Path, default=Path("config.toml"))
     return parser
 
 
@@ -70,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
         from tradepilot.doctor import run_doctor
 
         return run_doctor(config, send_test=args.send_test, catalog=catalog)
+
+    if args.command == "backtest":
+        from tradepilot.research.gui import run_backtest_gui
+
+        return run_backtest_gui(config, catalog)
 
     from tradepilot.app import TradePilotApp
 

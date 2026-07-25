@@ -7,7 +7,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from datetime import time as daytime
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -19,6 +19,8 @@ from tradepilot.core.config import parse_vt_symbol
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 QUOTE_URL = "https://qt.gtimg.cn/q="
 HISTORY_URL = "https://web.ifzq.gtimg.cn/appstock/app/day/query"
+DAILY_HISTORY_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+DAILY_HISTORY_PAGE_SIZE = 640
 USER_AGENT = "Mozilla/5.0 (TradePilot/0.1; Tencent POC feed)"
 QUOTE_PATTERN = re.compile(r'v_(?P<symbol>(?:sh|sz)\d{6})="(?P<data>.*)";?')
 
@@ -83,6 +85,19 @@ class MinuteSnapshot:
     close_price: float
     volume: float
     turnover: float
+
+
+@dataclass(frozen=True, slots=True)
+class DailySnapshot:
+    symbol: str
+    exchange: str
+    timestamp: datetime
+    open_price: float
+    high_price: float
+    low_price: float
+    close_price: float
+    volume: float
+    turnover: float = 0.0
 
 
 def to_tencent_symbol(vt_symbol: str) -> str:
@@ -220,8 +235,74 @@ def parse_history_response(
     return snapshots
 
 
+def parse_daily_history_response(
+    raw: bytes | str | dict[str, Any],
+    vt_symbol: str,
+    *,
+    now: datetime,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[DailySnapshot]:
+    """Parse completed forward-adjusted daily bars returned by Tencent."""
+    payload = _load_json(raw)
+    tx_symbol = to_tencent_symbol(vt_symbol)
+    symbol, exchange = parse_vt_symbol(vt_symbol)
+    node = payload.get("data", {}).get(tx_symbol, {})
+    rows = node.get("qfqday") or node.get("day") or []
+    if not isinstance(rows, list):
+        raise TencentDataError("Tencent daily history has an invalid data node")
+
+    now_local = _as_shanghai(now)
+    start_date = _local_date(start) if start else None
+    end_date = _local_date(end) if end else None
+    result: dict[date, DailySnapshot] = {}
+
+    for row in rows:
+        if not isinstance(row, list | tuple) or len(row) < 6:
+            continue
+        try:
+            trading_date = datetime.strptime(str(row[0]), "%Y-%m-%d").date()
+            open_price = _float(row[1])
+            close_price = _float(row[2])
+            high_price = _float(row[3])
+            low_price = _float(row[4])
+            volume = _float(row[5])
+        except (TencentDataError, ValueError):
+            continue
+
+        if trading_date == now_local.date() and now_local.time() < daytime(15, 1):
+            continue
+        if start_date and trading_date < start_date:
+            continue
+        if end_date and trading_date > end_date:
+            continue
+        if min(open_price, high_price, low_price, close_price) <= 0 or volume < 0:
+            continue
+        if high_price < max(open_price, low_price, close_price):
+            continue
+        if low_price > min(open_price, high_price, close_price):
+            continue
+
+        timestamp = datetime.combine(trading_date, daytime(), tzinfo=SHANGHAI_TZ)
+        result[trading_date] = DailySnapshot(
+            symbol=symbol,
+            exchange=exchange,
+            timestamp=timestamp,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=close_price,
+            volume=volume,
+        )
+
+    snapshots = [result[key] for key in sorted(result)]
+    if not snapshots:
+        raise TencentDataError(f"Tencent returned no completed daily data for {vt_symbol}")
+    return snapshots
+
+
 class TencentClient:
-    """Retrying HTTP client for batched quotes and five-day minute history."""
+    """Retrying client for quotes, five-day minute bars, and paged daily bars."""
 
     def __init__(
         self,
@@ -262,6 +343,64 @@ class TencentClient:
             start=start,
             end=end,
         )
+
+    def fetch_daily_history(
+        self,
+        vt_symbol: str,
+        *,
+        now: datetime,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[DailySnapshot]:
+        """Fetch forward-adjusted daily bars, paging backwards to the requested start."""
+        now_local = _as_shanghai(now)
+        start_date = _local_date(start) if start else date(1990, 1, 1)
+        end_date = min(_local_date(end) if end else now_local.date(), now_local.date())
+        if start_date > end_date:
+            return []
+
+        tx_symbol = to_tencent_symbol(vt_symbol)
+        cursor = end_date
+        result: dict[date, DailySnapshot] = {}
+
+        for _ in range(100):
+            response = self._request(
+                DAILY_HISTORY_URL,
+                params={
+                    "param": (
+                        f"{tx_symbol},day,{start_date:%Y-%m-%d},"
+                        f"{cursor:%Y-%m-%d},{DAILY_HISTORY_PAGE_SIZE},qfq"
+                    )
+                },
+            )
+            try:
+                page = parse_daily_history_response(
+                    response.content,
+                    vt_symbol,
+                    now=now_local,
+                    start=start,
+                    end=end,
+                )
+            except TencentDataError as exc:
+                no_data = str(exc) == (f"Tencent returned no completed daily data for {vt_symbol}")
+                if result and no_data:
+                    break
+                raise
+
+            for snapshot in page:
+                result[snapshot.timestamp.date()] = snapshot
+
+            earliest = page[0].timestamp.date()
+            if earliest <= start_date:
+                break
+            next_cursor = earliest - timedelta(days=1)
+            if next_cursor >= cursor:
+                raise TencentDataError("Tencent daily history pagination did not advance")
+            cursor = next_cursor
+        else:
+            raise TencentDataError("Tencent daily history exceeded pagination limit")
+
+        return [result[key] for key in sorted(result)]
 
     def _request(
         self,
@@ -312,6 +451,10 @@ def _as_shanghai(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=SHANGHAI_TZ)
     return value.astimezone(SHANGHAI_TZ)
+
+
+def _local_date(value: datetime) -> date:
+    return _as_shanghai(value).date()
 
 
 def _float(value: str | int | float) -> float:

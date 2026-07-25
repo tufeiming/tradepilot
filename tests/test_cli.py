@@ -5,7 +5,7 @@ import pytest
 from tradepilot.cli import build_parser
 
 
-@pytest.mark.parametrize("command", ["doctor", "monitor"])
+@pytest.mark.parametrize("command", ["doctor", "monitor", "backtest"])
 def test_config_defaults_to_project_toml(command):
     args = build_parser().parse_args([command])
     assert args.config == Path("config.toml")

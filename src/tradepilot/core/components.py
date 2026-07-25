@@ -53,6 +53,7 @@ class StrategyPlugin(ABC):
     name: str
     display_name: str
     strategy_class: type[CtaTemplate]
+    backtest_strategy_class: type[CtaTemplate] | None = None
     managed_prefix: str = MANAGED_STRATEGY_PREFIX
 
     @abstractmethod
@@ -81,6 +82,10 @@ class StrategyPlugin(ABC):
             bool(getattr(strategy, "history_ready", False)),
             int(getattr(strategy, "history_count", 0)),
         )
+
+    def get_backtest_strategy_class(self, config: AppConfig) -> type[CtaTemplate] | None:
+        """Return the GUI research class, optionally applying config defaults."""
+        return self.backtest_strategy_class
 
     def on_session_closed(self, strategy: CtaTemplate) -> None:
         """Finalize the last completed bar when supported by the strategy."""
@@ -130,6 +135,10 @@ class ComponentCatalog:
             raise ConfigError(f"{data_source.name} gateway_class must inherit BaseGateway")
         if not issubclass(strategy.strategy_class, CtaTemplate):
             raise ConfigError(f"{strategy.name} strategy_class must inherit CtaTemplate")
+        if strategy.backtest_strategy_class is not None and not issubclass(
+            strategy.backtest_strategy_class, CtaTemplate
+        ):
+            raise ConfigError(f"{strategy.name} backtest_strategy_class must inherit CtaTemplate")
         data_source.validate(config)
         strategy.validate(config)
 

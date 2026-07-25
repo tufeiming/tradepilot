@@ -11,6 +11,9 @@ src/tradepilot/
 ├── bootstrap.py                   # 内置组件装配和 entry point 发现
 ├── cli.py                         # 命令行入口
 ├── doctor.py                      # 只读诊断用例
+├── research/
+│   ├── backtester.py              # 官方 CtaBacktester 策略注册适配
+│   └── gui.py                     # 图形化研究入口
 ├── core/
 │   ├── components.py              # 插件抽象、注册表和组件目录
 │   ├── config.py                  # 核心 TOML 配置
@@ -22,7 +25,9 @@ src/tradepilot/
 │       └── plugin.py              # DataSourcePlugin 适配
 ├── strategies/
 │   └── double_ma/
-│       ├── strategy.py            # CTA 策略实现
+│       ├── base.py                # 实时和回测共用交叉规则
+│       ├── strategy.py            # 仅通知 CTA 策略
+│       ├── backtest.py            # 仅回测模拟成交策略
 │       └── plugin.py              # StrategyPlugin 适配
 └── notifications/
     └── feishu.py                   # 飞书客户端、发件箱和通知服务
@@ -42,6 +47,7 @@ flowchart LR
     Engine --> Cta
     Cta --> Signal["SignalEvent"]
     Signal --> Notify["持久化通知队列"]
+    Strategy --> Research["CtaBacktester GUI"]
 ```
 
 ## 配置选择
@@ -84,12 +90,15 @@ slow_window = 20
 策略插件负责：
 
 - 声明唯一名称、显示名称和 `CtaTemplate` 子类
+- 可选声明独立的回测 `CtaTemplate` 类，由官方 CtaBacktester 加载
 - 验证 `[strategy]` 参数和历史预热要求
 - 为每个标的生成稳定的 CTA 实例名
 - 生成传给 CTA 引擎的参数
 - 报告预热状态、配置摘要和会话结束行为
 
-当前内置实现是 `DoubleMaSignalStrategyPlugin`，对应 `DoubleMaSignalStrategy`。
+当前内置实现是 `DoubleMaSignalStrategyPlugin`。实时类 `DoubleMaSignalStrategy` 只发布信号；研究类
+`DoubleMaLongBacktestStrategy` 只允许在 `EngineType.BACKTESTING` 中产生模拟委托。二者共用
+`DoubleMaStrategyBase`，保证交叉公式一致。
 
 ### ExtensionRegistry 与 ComponentCatalog
 
@@ -157,6 +166,7 @@ from tradepilot.core.components import StrategyPlugin
 
 - 数据源只发布合法、单调、带正确时区的行情对象。
 - 通知策略不得直接调用委托 API。
+- 回测策略必须在委托前校验 `EngineType.BACKTESTING`，不得注册到实时监控应用。
 - 初始化历史只用于预热，不能发送历史信号。
 - 策略信号必须使用 `SignalEvent`，由统一通知层去重和持久化。
 - 实际数据源显示名称必须写入信号，不能在策略中硬编码腾讯。
