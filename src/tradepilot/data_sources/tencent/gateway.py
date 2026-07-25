@@ -75,6 +75,16 @@ class TencentGateway(BaseGateway):
         self._stale_after = float(setting.get("stale_after_seconds", 30.0))
         self._configured_symbols = set(symbols)
 
+        names: dict[str, str] = {}
+        try:
+            names = {
+                quote.vt_symbol: quote.name.strip()
+                for quote in self.client.fetch_quotes(list(symbols))
+                if quote.name.strip()
+            }
+        except TencentError as exc:
+            self.write_log(f"加载腾讯证券名称失败，将显示证券代码：{exc}")
+
         for vt_symbol in symbols:
             symbol, exchange_name = parse_vt_symbol(vt_symbol)
             exchange = Exchange[exchange_name]
@@ -83,7 +93,7 @@ class TencentGateway(BaseGateway):
                 gateway_name=self.gateway_name,
                 symbol=symbol,
                 exchange=exchange,
-                name=symbol,
+                name=names.get(vt_symbol, symbol),
                 product=Product.ETF if is_etf else Product.EQUITY,
                 size=100,
                 pricetick=0.001 if is_etf else 0.01,
@@ -101,7 +111,15 @@ class TencentGateway(BaseGateway):
         )
         self._thread.start()
         self.write_log(f"腾讯POC行情已连接，配置 {len(symbols)} 个标的")
-        self._emit_status(FeedStatus.CONNECTED, f"腾讯POC行情已连接：{len(symbols)} 个标的")
+        labels = [
+            f"{names[vt_symbol]}（{vt_symbol}）" if vt_symbol in names else vt_symbol
+            for vt_symbol in symbols
+        ]
+        watchlist = "\n".join(f"- {label}" for label in labels)
+        self._emit_status(
+            FeedStatus.CONNECTED,
+            f"腾讯POC行情已连接：{len(symbols)} 个标的\n监听标的：\n{watchlist}",
+        )
 
     def close(self) -> None:
         self._stop.set()

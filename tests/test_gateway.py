@@ -5,7 +5,13 @@ from vnpy.event import EventEngine
 from vnpy.trader.constant import Direction, Exchange, Interval, OrderType
 from vnpy.trader.object import HistoryRequest, OrderRequest
 
-from tradepilot.data_sources.tencent.client import SHANGHAI_TZ, DailySnapshot, MinuteSnapshot
+from tradepilot.core.events import FeedStatus
+from tradepilot.data_sources.tencent.client import (
+    SHANGHAI_TZ,
+    DailySnapshot,
+    MinuteSnapshot,
+    QuoteSnapshot,
+)
 from tradepilot.data_sources.tencent.gateway import (
     TencentGateway,
     TradingDisabledError,
@@ -18,6 +24,53 @@ def test_normalize_multiple_symbols():
         "515080.SSE",
         "159915.SZSE",
     )
+
+
+def test_gateway_publishes_contract_with_quote_name():
+    gateway = TencentGateway(EventEngine(), "TENCENT")
+    gateway.client.fetch_quotes = lambda symbols: [
+        QuoteSnapshot(
+            symbol="600011",
+            exchange="SSE",
+            name="华能国际",
+            timestamp=datetime(2026, 7, 24, 15, 0, tzinfo=SHANGHAI_TZ),
+            last_price=7.1,
+            volume=1,
+            turnover=7.1,
+            open_price=7.0,
+            high_price=7.2,
+            low_price=6.9,
+            pre_close=7.0,
+            bid_price_1=7.09,
+            bid_volume_1=100,
+            ask_price_1=7.1,
+            ask_volume_1=100,
+        )
+    ]
+    contracts = []
+    statuses = []
+    gateway.on_contract = contracts.append
+    gateway._emit_status = lambda status, message: statuses.append((status, message))
+
+    try:
+        gateway.connect(
+            {
+                "symbols": ["600011.SSE"],
+                "poll_interval_seconds": 3,
+                "stale_after_seconds": 30,
+            }
+        )
+    finally:
+        gateway.close()
+
+    assert len(contracts) == 1
+    assert contracts[0].name == "华能国际"
+    assert statuses == [
+        (
+            FeedStatus.CONNECTED,
+            "腾讯POC行情已连接：1 个标的\n监听标的：\n- 华能国际（600011.SSE）",
+        )
+    ]
 
 
 def test_gateway_rejects_every_order():

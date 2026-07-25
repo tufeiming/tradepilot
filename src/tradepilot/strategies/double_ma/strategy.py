@@ -19,7 +19,7 @@ from tradepilot.strategies.double_ma.base import DoubleMaStrategyBase
 
 
 class DoubleMaSignalStrategy(DoubleMaStrategyBase):
-    """Completed-bar double-MA crosses that publish signals and never place orders."""
+    """Publish completed-bar golden crosses and never place orders."""
 
     author = "TradePilot"
 
@@ -31,6 +31,9 @@ class DoubleMaSignalStrategy(DoubleMaStrategyBase):
         self.put_event()
 
     def on_cross(self, direction: SignalDirection, bar: BarData) -> None:
+        if direction is not SignalDirection.BUY:
+            return
+
         signal = SignalEvent(
             strategy_name=self.strategy_name,
             vt_symbol=self.vt_symbol,

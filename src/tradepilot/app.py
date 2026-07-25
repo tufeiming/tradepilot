@@ -104,19 +104,21 @@ class TradePilotApp:
 
             self.cta_engine.start_strategy(strategy_name)
             ready += 1
+            instrument_label = self._instrument_label(strategy.vt_symbol)
             self.notifier.enqueue(
                 f"strategy-ready|{strategy_name}|{datetime.now(MARKET_TZ):%Y%m%d}",
-                f"[策略就绪] {strategy_name}\n"
+                f"[策略就绪] {instrument_label}\n"
                 f"{self.strategy_plugin.configuration_summary(self.config)}\n"
                 "运行模式：notify（仅通知，委托已禁用）",
             )
 
         self._started = True
+        watchlist = self._watchlist_summary()
         self.notifier.enqueue(
             f"app-start|{datetime.now(MARKET_TZ):%Y%m%d%H%M%S}",
             f"[TradePilot启动]\n配置 {len(self._managed_names)} 个标的，"
             f"成功启动 {ready} 个策略\n数据源：{self.data_source.display_name}\n"
-            f"策略：{self.strategy_plugin.display_name}",
+            f"策略：{self.strategy_plugin.display_name}\n{watchlist}",
         )
         return ready
 
@@ -191,6 +193,18 @@ class TradePilotApp:
                 f"{self.data_source.display_name} did not publish contracts: "
                 + ", ".join(sorted(missing))
             )
+
+    def _instrument_label(self, vt_symbol: str) -> str:
+        contract = self.main_engine.get_contract(vt_symbol)
+        if contract and contract.name and contract.name != contract.symbol:
+            return f"{contract.name}（{vt_symbol}）"
+        return vt_symbol
+
+    def _watchlist_summary(self) -> str:
+        labels = (
+            self._instrument_label(vt_symbol) for vt_symbol in self.config.monitor.symbols
+        )
+        return "监听标的：\n" + "\n".join(f"- {label}" for label in labels)
 
     def _on_feed_control(self, event: Event) -> None:
         status: FeedStatusEvent = event.data

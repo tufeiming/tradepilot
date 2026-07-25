@@ -137,7 +137,7 @@ def test_initialization_warms_up_without_emitting_signal():
     assert engine.event_engine.events == []
 
 
-def test_tick_to_bar_pipeline_emits_one_buy_and_one_sell():
+def test_tick_to_bar_pipeline_emits_only_golden_cross():
     strategy, engine = build_strategy()
     strategy.trading = True
     for minute, price in [(0, 4), (1, 6), (2, 6), (3, 4), (4, 2)]:
@@ -146,10 +146,7 @@ def test_tick_to_bar_pipeline_emits_one_buy_and_one_sell():
     signals = [
         event.data for event in engine.event_engine.events if event.type == EVENT_TRADEPILOT_SIGNAL
     ]
-    assert [signal.direction for signal in signals] == [
-        SignalDirection.BUY,
-        SignalDirection.SELL,
-    ]
+    assert [signal.direction for signal in signals] == [SignalDirection.BUY]
     assert {signal.source for signal in signals} == {"Test Feed"}
 
 
@@ -163,7 +160,7 @@ def test_stop_does_not_finalize_an_incomplete_minute():
     assert engine.event_engine.events == []
 
 
-def test_15m_live_pipeline_emits_only_on_complete_aligned_windows():
+def test_15m_live_pipeline_emits_only_golden_cross_on_complete_aligned_windows():
     strategy, engine = build_15m_strategy()
     assert engine.timeframe_request == ("515080.SSE", "15m", 5)
     strategy.trading = True
@@ -177,11 +174,8 @@ def test_15m_live_pipeline_emits_only_on_complete_aligned_windows():
     signals = [
         event.data for event in engine.event_engine.events if event.type == EVENT_TRADEPILOT_SIGNAL
     ]
-    assert [signal.direction for signal in signals] == [
-        SignalDirection.BUY,
-        SignalDirection.SELL,
-    ]
-    assert [signal.bar_time.strftime("%H:%M") for signal in signals] == ["09:45", "10:15"]
+    assert [signal.direction for signal in signals] == [SignalDirection.BUY]
+    assert [signal.bar_time.strftime("%H:%M") for signal in signals] == ["09:45"]
 
 
 def test_incomplete_15m_window_does_not_reach_strategy():

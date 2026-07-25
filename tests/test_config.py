@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,6 +47,40 @@ def test_load_valid_config(tmp_path):
     assert config.strategy.settings["bar_window_minutes"] == 15
     assert config.execution.mode.value == "notify"
     assert config.runtime_dir == tmp_path / ".vntrader"
+
+
+def test_instrument_label_includes_name_and_symbol():
+    app = object.__new__(TradePilotApp)
+    app.main_engine = SimpleNamespace(
+        get_contract=lambda vt_symbol: SimpleNamespace(name="华能国际", symbol="600011")
+    )
+
+    assert app._instrument_label("600011.SSE") == "华能国际（600011.SSE）"
+
+
+def test_instrument_label_falls_back_to_symbol():
+    app = object.__new__(TradePilotApp)
+    app.main_engine = SimpleNamespace(
+        get_contract=lambda vt_symbol: SimpleNamespace(name="600011", symbol="600011")
+    )
+
+    assert app._instrument_label("600011.SSE") == "600011.SSE"
+
+
+def test_watchlist_summary_lists_all_instruments():
+    contracts = {
+        "600011.SSE": SimpleNamespace(name="华能国际", symbol="600011"),
+        "515080.SSE": SimpleNamespace(name="515080", symbol="515080"),
+    }
+    app = object.__new__(TradePilotApp)
+    app.config = SimpleNamespace(
+        monitor=SimpleNamespace(symbols=("600011.SSE", "515080.SSE"))
+    )
+    app.main_engine = SimpleNamespace(get_contract=contracts.get)
+
+    assert app._watchlist_summary() == (
+        "监听标的：\n- 华能国际（600011.SSE）\n- 515080.SSE"
+    )
 
 
 @pytest.mark.parametrize(

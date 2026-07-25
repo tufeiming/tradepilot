@@ -127,12 +127,12 @@ def test_fake_tencent_tick_to_ma_cross_to_feishu(tmp_path):
             )
 
         deadline = time.monotonic() + 2
-        while len(delivered) < 2 and time.monotonic() < deadline:
+        while len(delivered) < 1 and time.monotonic() < deadline:
             time.sleep(0.01)
 
-        assert len(delivered) == 2
+        assert len(delivered) == 1
         assert sum("[BUY] 515080.SSE" in message for message in delivered) == 1
-        assert sum("[SELL] 515080.SSE" in message for message in delivered) == 1
+        assert all("[SELL]" not in message for message in delivered)
     finally:
         notifier.stop()
         event_engine.stop()
