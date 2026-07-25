@@ -6,6 +6,8 @@ on:
 
 jobs:
   test:
+    env:
+      QT_QPA_PLATFORM: offscreen
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
@@ -17,6 +19,9 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: true
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libegl1
       - run: uv sync --frozen --all-groups
       - run: uv run ruff check .
       - run: uv run ruff format --check .
